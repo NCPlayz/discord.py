@@ -6,13 +6,13 @@ Help Commands
 =================
 
 The simplicity of :class:`~.commands.HelpCommand` allows you to customise
-your experience really easily.
+your experience very easily.
 
 Sending Help
 ---------------
 
 You may want to send help if the user doesn't use your command
-right. Here is an example of what you can do:
+correctly. Here is an example of what you can do:
 
 .. code-block:: python3
     :caption: sos.py
@@ -25,7 +25,7 @@ right. Here is an example of what you can do:
         """Send Help!"""
         if not what:
             return await ctx.send_help('sos')
-        await ctx.send(f'Sending help for {what}!')
+        await ctx.send('Sending help for {0}!'.format(what))
         await ctx.send_help(what)
 
     def setup(bot):
