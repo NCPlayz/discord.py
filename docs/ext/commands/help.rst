@@ -162,7 +162,6 @@ To counter this, you could set the new help command to default,
     def teardown(bot):
         bot.help_command = commands.DefaultHelpCommand()
 
-
 Here is an example of what you are able to do by subclassing
 :class:`~.commands.MinimalHelpCommand`:
 
