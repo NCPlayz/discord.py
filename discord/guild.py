@@ -43,6 +43,7 @@ from .invite import Invite
 from .iterators import AuditLogIterator
 from .webhook import Webhook
 from .widget import Widget
+from .integrations import Integration
 
 VALID_ICON_FORMATS = {"jpeg", "jpg", "webp", "png"}
 
@@ -1168,6 +1169,53 @@ class Guild(Hashable):
             result.append(Invite(state=self._state, data=invite))
 
         return result
+
+    async def create_integration(self, integration_type, integration_id):
+        """|coro|
+
+        Attaches an integration to the guild.
+
+        You must have the :attr:`~Permissions.manage_guild` permission to
+        do this.
+
+        Parameters
+        -----------
+        integration_type: :class:`string`
+            The integration type (i.e. Twitch).
+        integration_id: :class:`id`
+            The integration ID.
+
+        Raises
+        -------
+        Forbidden
+            You do not have permission to create the integration.
+        HTTPException
+            The account could not be found.
+        """
+        await self._state.http.create_integration(self.id, integration_type, integration_id)
+
+    async def integrations(self):
+        """|coro|
+
+        Returns a list of all integrations attached to the guild.
+
+        You must have the :attr:`~Permissions.manage_guild` permission to
+        do this.
+
+        Raises
+        -------
+        Forbidden
+            You do not have permission to create the integration.
+        HTTPException
+            Fetching the integrations failed.
+
+        Returns
+        --------
+        List[:class:`Integration`]
+            The list of integrations that are attached to the guild.
+        """
+        data = await self._state.http.get_all_integrations(self.id)
+        return [Integration(self, d) for d in data]
 
     async def create_custom_emoji(self, *, name, image, roles=None, reason=None):
         r"""|coro|
