@@ -490,6 +490,12 @@ class Client:
         A shorthand coroutine for :meth:`login` + :meth:`connect`.
         """
 
+        valid_kwargs = frozenset({'bot', 'reconnect'})
+
+        for i in kwargs:
+            if i not in valid_kwargs:
+                raise TypeError('got an unexpected keyword argument {arg!r}'.format(arg=next(iter(kwargs))))
+
         bot = kwargs.pop('bot', True)
         reconnect = kwargs.pop('reconnect', True)
         await self.login(*args, bot=bot)
