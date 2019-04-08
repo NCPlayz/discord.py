@@ -35,6 +35,7 @@ import aiohttp
 import websockets
 
 from .user import User, Profile
+from .asset import Asset
 from .invite import Invite
 from .widget import Widget
 from .guild import Guild
@@ -50,20 +51,43 @@ from . import utils
 from .backoff import ExponentialBackoff
 from .webhook import Webhook
 from .iterators import GuildIterator
+from .appinfo import AppInfo
 
 log = logging.getLogger(__name__)
 
-AppInfo = namedtuple('AppInfo',
-                     'id name description rpc_origins bot_public bot_require_code_grant icon owner')
+def _cancel_tasks(loop, tasks):
+    if not tasks:
+        return
 
-def app_info_icon_url(self):
-    """Retrieves the application's icon_url if it exists. Empty string otherwise."""
-    if not self.icon:
-        return ''
+    log.info('Cleaning up after %d tasks.', len(tasks))
+    gathered = asyncio.gather(*tasks, loop=loop, return_exceptions=True)
+    gathered.cancel()
+    gathered.add_done_callback(lambda fut: loop.stop())
 
-    return 'https://cdn.discordapp.com/app-icons/{0.id}/{0.icon}.jpg'.format(self)
+    while not gathered.done():
+        loop.run_forever()
 
-AppInfo.icon_url = property(app_info_icon_url)
+    for task in tasks:
+        if task.cancelled():
+            continue
+        if task.exception() is not None:
+            loop.call_exception_handler({
+                'message': 'Unhandled exception during Client.run shutdown.',
+                'exception': task.exception(),
+                'task': task
+            })
+
+def _cleanup_loop(loop):
+    try:
+        task_retriever = asyncio.Task.all_tasks
+    except AttributeError:
+        # future proofing for 3.9 I guess
+        task_retriever = asyncio.all_tasks
+
+    all_tasks = {t for t in task_retriever(loop=loop) if not t.done()}
+    _cancel_tasks(loop, all_tasks)
+    if sys.version_info >= (3, 6):
+        loop.run_until_complete(loop.shutdown_asyncgens())
 
 class Client:
     r"""Represents a client connection that connects to Discord.
@@ -358,6 +382,7 @@ class Client:
                 await self.ws.poll_event()
             except ResumeWebSocket:
                 log.info('Got a request to RESUME the websocket.')
+                self.dispatch('disconnect')
                 coro = DiscordWebSocket.from_client(self, shard_id=self.shard_id, session=self.ws.session_id,
                                                     sequence=self.ws.sequence, resume=True)
                 self.ws = await asyncio.wait_for(coro, timeout=180.0, loop=self.loop)
@@ -478,38 +503,25 @@ class Client:
 
         task = asyncio.ensure_future(self.close(), loop=loop)
 
-        def _silence_gathered(fut):
+        def stop_loop(fut):
             try:
                 fut.result()
-            except Exception:
+            except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                loop.call_exception_handler({
+                    'message': 'Unexpected exception during Client.close',
+                    'exception': e
+                })
             finally:
                 loop.stop()
 
-        def when_future_is_done(fut):
-            pending = asyncio.Task.all_tasks(loop=loop)
-            if pending:
-                log.info('Cleaning up after %s tasks', len(pending))
-                gathered = asyncio.gather(*pending, loop=loop)
-                gathered.cancel()
-                gathered.add_done_callback(_silence_gathered)
-            else:
-                loop.stop()
-
-        task.add_done_callback(when_future_is_done)
-        if not loop.is_running():
-            loop.run_forever()
-        else:
-            # on Linux, we're still running because we got triggered via
-            # the signal handler rather than the natural KeyboardInterrupt
-            # Since that's the case, we're going to return control after
-            # registering the task for the event loop to handle later
-            return None
-
+        task.add_done_callback(stop_loop)
         try:
-            return task.result() # suppress unused task warning
-        except Exception:
-            return None
+            loop.run_forever()
+        finally:
+            _cleanup_loop(loop)
+            loop.close()
 
     def run(self, *args, **kwargs):
         """A blocking call that abstracts away the `event loop`_
@@ -541,26 +553,13 @@ class Client:
             loop.add_signal_handler(signal.SIGINT, self._do_cleanup)
             loop.add_signal_handler(signal.SIGTERM, self._do_cleanup)
 
-        task = asyncio.ensure_future(self.start(*args, **kwargs), loop=loop)
-
-        def stop_loop_on_finish(fut):
-            loop.stop()
-
-        task.add_done_callback(stop_loop_on_finish)
-
         try:
-            loop.run_forever()
+            loop.run_until_complete(self.start(*args, **kwargs))
         except KeyboardInterrupt:
             log.info('Received signal to terminate bot and event loop.')
         finally:
-            task.remove_done_callback(stop_loop_on_finish)
             if is_windows:
                 self._do_cleanup()
-
-            loop.close()
-            if task.cancelled() or not task.done():
-                return None
-            return task.result()
 
     # properties
 
@@ -756,7 +755,7 @@ class Client:
 
         You can find more info about the events on the :ref:`documentation below <discord-api-events>`.
 
-        The events must be a |corourl|_, if not, :exc:`ClientException` is raised.
+        The events must be a |corourl|_, if not, :exc:`TypeError` is raised.
 
         Example
         ---------
@@ -766,10 +765,15 @@ class Client:
             @client.event
             async def on_ready():
                 print('Ready!')
+
+        Raises
+        --------
+        TypeError
+            The coroutine passed is not actually a coroutine.
         """
 
         if not asyncio.iscoroutinefunction(coro):
-            raise ClientException('event registered must be a coroutine function')
+            raise TypeError('event registered must be a coroutine function')
 
         setattr(self, coro.__name__, coro)
         log.debug('%s has successfully been registered as an event', coro.__name__)
@@ -1060,11 +1064,7 @@ class Client:
         data = await self.http.application_info()
         if 'rpc_origins' not in data:
             data['rpc_origins'] = None
-        return AppInfo(id=int(data['id']), name=data['name'],
-                       description=data['description'], icon=data['icon'],
-                       rpc_origins=data['rpc_origins'], bot_public=data['bot_public'],
-                       bot_require_code_grant=data['bot_require_code_grant'],
-                       owner=User(state=self._connection, data=data['owner']))
+        return AppInfo(self._connection, data)
 
     async def fetch_user(self, user_id):
         """|coro|

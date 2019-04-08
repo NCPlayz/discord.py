@@ -31,21 +31,20 @@ from . import utils
 from .role import Role
 from .member import Member, VoiceState
 from .activity import create_activity
+from .emoji import Emoji
 from .permissions import PermissionOverwrite
 from .colour import Colour
 from .errors import InvalidArgument, ClientException
 from .channel import *
 from .enums import VoiceRegion, Status, ChannelType, try_enum, VerificationLevel, ContentFilter, NotificationLevel
 from .mixins import Hashable
-from .utils import valid_icon_size
 from .user import User
 from .invite import Invite
 from .iterators import AuditLogIterator
 from .webhook import Webhook
 from .widget import Widget
 from .integrations import Integration
-
-VALID_ICON_FORMATS = {"jpeg", "jpg", "webp", "png"}
+from .asset import Asset
 
 BanEntry = namedtuple('BanEntry', 'reason user')
 
@@ -442,18 +441,10 @@ class Guild(Hashable):
 
         Returns
         --------
-        :class:`str`
-            The resulting CDN URL.
+        :class:`Asset`
+            The resulting CDN asset.
         """
-        if not valid_icon_size(size):
-            raise InvalidArgument("size must be a power of 2 between 16 and 4096")
-        if format not in VALID_ICON_FORMATS:
-            raise InvalidArgument("format must be one of {}".format(VALID_ICON_FORMATS))
-
-        if self.icon is None:
-            return ''
-
-        return 'https://cdn.discordapp.com/icons/{0.id}/{0.icon}.{1}?size={2}'.format(self, format, size)
+        return Asset._from_guild_image(self._state, self.id, self.icon, 'icons', format=format, size=size)
 
     @property
     def banner_url(self):
@@ -480,18 +471,10 @@ class Guild(Hashable):
 
         Returns
         --------
-        :class:`str`
-            The resulting CDN URL.
+        :class:`Asset`
+            The resulting CDN asset.
         """
-        if not valid_icon_size(size):
-            raise InvalidArgument("size must be a power of 2 between 16 and 4096")
-        if format not in VALID_ICON_FORMATS:
-            raise InvalidArgument("format must be one of {}".format(VALID_ICON_FORMATS))
-
-        if self.banner is None:
-            return ''
-
-        return 'https://cdn.discordapp.com/banners/{0.id}/{0.banner}.{1}?size={2}'.format(self, format, size)
+        return Asset._from_guild_image(self._state, self.id, self.banner, 'banners', format=format, size=size)
 
     @property
     def splash_url(self):
@@ -518,18 +501,10 @@ class Guild(Hashable):
 
         Returns
         --------
-        :class:`str`
-            The resulting CDN URL.
+        :class:`Asset`
+            The resulting CDN asset.
         """
-        if not valid_icon_size(size):
-            raise InvalidArgument("size must be a power of 2 between 16 and 4096")
-        if format not in VALID_ICON_FORMATS:
-            raise InvalidArgument("format must be one of {}".format(VALID_ICON_FORMATS))
-
-        if self.splash is None:
-            return ''
-
-        return 'https://cdn.discordapp.com/splashes/{0.id}/{0.splash}.{1}?size={2}'.format(self, format, size)
+        return Asset._from_guild_image(self._state, self.id, self.splash, 'splashes', format=format, size=size)
 
     @property
     def member_count(self):
@@ -1169,7 +1144,7 @@ class Guild(Hashable):
             result.append(Invite(state=self._state, data=invite))
 
         return result
-
+      
     async def create_integration(self, integration_type, integration_id):
         """|coro|
 
@@ -1217,6 +1192,49 @@ class Guild(Hashable):
         data = await self._state.http.get_all_integrations(self.id)
         return [Integration(self, d) for d in data]
 
+    async def fetch_emojis(self):
+        """|coro|
+
+        Retrieves all custom :class:`Emoji`s from the guild.
+
+        Raises
+        ---------
+        HTTPException
+            An error occurred fetching the emojis.
+
+        Returns
+        --------
+        List[:class:`Emoji`]
+            The retrieved emojis.
+        """
+        data = await self._state.http.get_all_custom_emojis(self.id)
+        return [Emoji(guild=self, state=self._state, data=d) for d in data]
+
+    async def fetch_emoji(self, emoji_id):
+        """|coro|
+
+        Retrieves a custom :class:`Emoji` from the guild.
+
+        Parameters
+        -------------
+        emoji_id: :class:`int`
+            The emoji's ID.
+
+        Raises
+        ---------
+        NotFound
+            The emoji requested could not be found.
+        HTTPException
+            An error occurred fetching the emoji.
+
+        Returns
+        --------
+        :class:`Emoji`
+            The retrieved emoji.
+        """
+        data = await self._state.http.get_custom_emoji(self.id, emoji_id)
+        return Emoji(guild=self, state=self._state, data=data)
+      
     async def create_custom_emoji(self, *, name, image, roles=None, reason=None):
         r"""|coro|
 
@@ -1467,7 +1485,7 @@ class Guild(Hashable):
             raise ClientException('Must not be a bot account to ack messages.')
         return state.http.ack_guild(self.id)
 
-    def audit_logs(self, *, limit=100, before=None, after=None, reverse=None, user=None, action=None):
+    def audit_logs(self, *, limit=100, before=None, after=None, oldest_first=None, user=None, action=None):
         """Return an :class:`AsyncIterator` that enables receiving the guild's audit logs.
 
         You must have the :attr:`~Permissions.view_audit_log` permission to use this.
@@ -1500,11 +1518,9 @@ class Guild(Hashable):
         after: Union[:class:`abc.Snowflake`, datetime]
             Retrieve entries after this date or entry.
             If a date is provided it must be a timezone-naive datetime representing UTC time.
-        reverse: :class:`bool`
-            If set to true, return entries in oldest->newest order. If unspecified,
-            this defaults to ``False`` for most cases. However if passing in a
-            ``after`` parameter then this is set to ``True``. This avoids getting entries
-            out of order in the ``after`` case.
+        oldest_first: :class:`bool`
+            If set to true, return entries in oldest->newest order. Defaults to True if
+            ``after`` is specified, otherwise False.
         user: :class:`abc.Snowflake`
             The moderator to filter entries from.
         action: :class:`AuditLogAction`
@@ -1529,7 +1545,7 @@ class Guild(Hashable):
             action = action.value
 
         return AuditLogIterator(self, before=before, after=after, limit=limit,
-                                reverse=reverse, user_id=user, action_type=action)
+                                oldest_first=oldest_first, user_id=user, action_type=action)
     
     async def widget(self):
         """|coro|

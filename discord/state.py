@@ -366,21 +366,22 @@ class ConnectionState:
 
     def parse_message_delete(self, data):
         raw = RawMessageDeleteEvent(data)
-        self.dispatch('raw_message_delete', raw)
-
         found = self._get_message(raw.message_id)
+        raw.cached_message = found
+        self.dispatch('raw_message_delete', raw)
         if found is not None:
             self.dispatch('message_delete', found)
             self._messages.remove(found)
 
     def parse_message_delete_bulk(self, data):
         raw = RawBulkMessageDeleteEvent(data)
+        found_messages = [message for message in self._messages if message.id in raw.message_ids]
+        raw.cached_messages = found_messages
         self.dispatch('raw_bulk_message_delete', raw)
-
-        to_be_deleted = [message for message in self._messages if message.id in raw.message_ids]
-        for msg in to_be_deleted:
-            self.dispatch('message_delete', msg)
-            self._messages.remove(msg)
+        if found_messages:
+            self.dispatch('bulk_message_delete', found_messages)
+            for msg in found_messages:
+                self._messages.remove(msg)
 
     def parse_message_update(self, data):
         raw = RawMessageUpdateEvent(data)
@@ -402,7 +403,7 @@ class ConnectionState:
     def parse_message_reaction_add(self, data):
         emoji_data = data['emoji']
         emoji_id = utils._get_as_snowflake(emoji_data, 'id')
-        emoji = PartialEmoji(animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
+        emoji = PartialEmoji.with_state(self, animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
         raw = RawReactionActionEvent(data, emoji)
         self.dispatch('raw_reaction_add', raw)
 
@@ -428,7 +429,7 @@ class ConnectionState:
     def parse_message_reaction_remove(self, data):
         emoji_data = data['emoji']
         emoji_id = utils._get_as_snowflake(emoji_data, 'id')
-        emoji = PartialEmoji(animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
+        emoji = PartialEmoji.with_state(self, animated=emoji_data['animated'], id=emoji_id, name=emoji_data['name'])
         raw = RawReactionActionEvent(data, emoji)
         self.dispatch('raw_reaction_remove', raw)
 
@@ -460,11 +461,14 @@ class ConnectionState:
                 # skip these useless cases.
                 return
 
-            member = Member(guild=guild, data=data, state=self)
+            member, old_member = Member._from_presence_update(guild=guild, data=data, state=self)
             guild._add_member(member)
+        else:
+            old_member = Member._copy(member)
+            user_update = member._presence_update(data=data, user=user)
+            if user_update:
+                self.dispatch('user_update', user_update[0], user_update[1])
 
-        old_member = Member._copy(member)
-        member._presence_update(data=data, user=user)
         self.dispatch('member_update', old_member, member)
 
     def parse_user_update(self, data):
@@ -603,7 +607,7 @@ class ConnectionState:
         member = guild.get_member(user_id)
         if member is not None:
             old_member = copy.copy(member)
-            member._update(data, user)
+            member._update(data)
             self.dispatch('member_update', old_member, member)
         else:
             log.warning('GUILD_MEMBER_UPDATE referencing an unknown member ID: %s. Discarding.', user_id)

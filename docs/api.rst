@@ -16,20 +16,19 @@ The following section outlines the API of discord.py.
 Version Related Info
 ---------------------
 
-There are two main ways to query version information about the library.
+There are two main ways to query version information about the library. For guarantees, check :ref:`version_guarantees`.
 
 .. data:: version_info
 
-    A named tuple that is similar to `sys.version_info`_.
+    A named tuple that is similar to :obj:`py:sys.version_info`.
 
-    Just like `sys.version_info`_ the valid values for ``releaselevel`` are
+    Just like :obj:`py:sys.version_info`_ the valid values for ``releaselevel`` are
     'alpha', 'beta', 'candidate' and 'final'.
-
-    .. _sys.version_info: https://docs.python.org/3.5/library/sys.html#sys.version_info
 
 .. data:: __version__
 
-    A string representation of the version. e.g. ``'0.10.0-alpha0'``.
+    A string representation of the version. e.g. ``'1.0.0rc1'``. This is based
+    off of `PEP-440 <https://www.python.org/dev/peps/pep-0440/>`_.
 
 Client
 -------
@@ -38,6 +37,9 @@ Client
     :members:
 
 .. autoclass:: AutoShardedClient
+    :members:
+
+.. autoclass:: AppInfo
     :members:
 
 Voice
@@ -224,25 +226,45 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 .. function:: on_message_delete(message)
 
     Called when a message is deleted. If the message is not found in the
-    internal message cache, then these events will not be called. This
-    happens if the message is too old or the client is participating in high
-    traffic guilds. To fix this, increase the ``max_messages`` option of
-    :class:`Client`.
+    internal message cache, then this event will not be called.
+    Messages might not be in cache if the message is too old
+    or the client is participating in high traffic guilds.
+
+    If this occurs increase the :attr:`Client.max_messages` attribute.
 
     :param message: A :class:`Message` of the deleted message.
+
+.. function:: on_bulk_message_delete(messages)
+
+    Called when messages are bulk deleted. If none of the messages deleted
+    are found in the internal message cache, then this event will not be called.
+    If individual messages were not found in the internal message cache,
+    this event will still be called, but the messages not found will not be included in
+    the messages list. Messages might not be in cache if the message is too old
+    or the client is participating in high traffic guilds.
+
+    If this occurs increase the :attr:`Client.max_messages` attribute.
+
+    :param messages: A :class:`list` of :class:`Message` that have been deleted.
 
 .. function:: on_raw_message_delete(payload)
 
     Called when a message is deleted. Unlike :func:`on_message_delete`, this is
     called regardless of the message being in the internal message cache or not.
 
+    If the message is found in the message cache,
+    it can be accessed via:attr:`RawMessageDeleteEvent.cached_message`
+
     :param payload: The raw event payload data.
     :type payload: :class:`RawMessageDeleteEvent`
 
 .. function:: on_raw_bulk_message_delete(payload)
 
-    Called when a bulk delete is triggered. This event is called regardless
-    of the message IDs being in the internal message cache or not.
+    Called when a bulk delete is triggered. Unlike :func:`on_bulk_message_delete`, this is
+    called regardless of the messages being in the internal message cache or not.
+
+    If the messages are found in the message cache,
+    they can be accessed via :attr:`RawBulkMessageDeleteEvent.cached_messages`
 
     :param payload: The raw event payload data.
     :type payload: :class:`RawBulkMessageDeleteEvent`
@@ -251,8 +273,10 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 
     Called when a :class:`Message` receives an update event. If the message is not found
     in the internal message cache, then these events will not be called.
-    This happens if the message is too old or the client is participating in high
-    traffic guilds. To fix this, increase the ``max_messages`` option of :class:`Client`.
+    Messages might not be in cache if the message is too old
+    or the client is participating in high traffic guilds.
+
+    If this occurs increase the :attr:`Client.max_messages` attribute.
 
     The following non-exhaustive cases trigger this event:
 
@@ -285,7 +309,7 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 
 .. function:: on_reaction_add(reaction, user)
 
-    Called when a message has a reaction added to it. Similar to on_message_edit,
+    Called when a message has a reaction added to it. Similar to :func:`on_message_edit`,
     if the message is not found in the internal message cache, then this
     event will not be called.
 
@@ -415,12 +439,24 @@ to handle it, which defaults to print a traceback and ignoring the exception.
 
     - status
     - game playing
-    - avatar
     - nickname
     - roles
 
     :param before: The :class:`Member` that updated their profile with the old info.
     :param after: The :class:`Member` that updated their profile with the updated info.
+
+.. function:: on_user_update(before, after)
+
+    Called when a :class:`User` updates their profile.
+
+    This is called when one or more of the following things change:
+
+    - avatar
+    - username
+    - discriminator
+
+    :param before: The :class:`User` that updated their profile with the old info.
+    :param after: The :class:`User` that updated their profile with the updated info.
 
 .. function:: on_guild_join(guild)
 
@@ -557,6 +593,11 @@ Utility Functions
 .. autofunction:: discord.utils.snowflake_time
 
 .. autofunction:: discord.utils.oauth_url
+
+.. autofunction:: discord.utils.escape_markdown
+
+.. autofunction:: discord.utils.escape_mentions
+
 
 Application Info
 ------------------
@@ -1975,6 +2016,12 @@ Attachment
 ~~~~~~~~~~~
 
 .. autoclass:: Attachment()
+    :members:
+
+Asset
+~~~~~
+
+.. autoclass:: Asset()
     :members:
 
 Message
