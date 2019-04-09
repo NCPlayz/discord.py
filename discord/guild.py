@@ -1234,7 +1234,7 @@ class Guild(Hashable):
         """
         data = await self._state.http.get_custom_emoji(self.id, emoji_id)
         return Emoji(guild=self, state=self._state, data=data)
-      
+
     async def create_custom_emoji(self, *, name, image, roles=None, reason=None):
         r"""|coro|
 
