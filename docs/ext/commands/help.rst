@@ -43,9 +43,15 @@ correctly. Here is an example of how to do this:
 .. code-block:: python3
     :caption: sos.py
     :emphasize-lines: 8, 10, 18
+<<<<<<< HEAD
 
     from discord.ext import commands
 
+=======
+
+    from discord.ext import commands
+
+>>>>>>> Rewrite the help command prose page (I)
     bot = commands.Bot(command_prefix='!', description="Nothing to worry about here.")
 
     @bot.command()
