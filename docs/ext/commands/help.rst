@@ -25,7 +25,7 @@ Here is a simple example of the default behaviour:
     There are a number of utility commands being showcased here.
 
     MyCoolCog:
-    cool   Says if a user is cool.
+      cool   Says if a user is cool.
     No Category:
       add    Adds two numbers together.
       choose Chooses between multiple choices.
@@ -76,8 +76,8 @@ Let's take a look at this code step by step:
     - If that parameter is not passed, it will send help for the ``sos`` :meth:`~.commands.Command` instance.
     - If the parameter is passed, it will send help for the string, which is used to look
       through cog names and commands.
-        - Doing ``!sos damsel`` would try to find the command or cog named ``damsel``, and
-          send the help for it.
+      - Doing ``!sos damsel`` would try to find the command or cog named ``damsel``, and
+        send the help for it.
 
 #. In the cog ``MyCoolCog``, there is a docstring provided for help commands.
 
@@ -136,7 +136,7 @@ To counter this, you could set the new help command to default,
  during the teardown of an extension.
 
 .. code-block:: python3
-    :emphasize-lines: 22, 23
+    :emphasize-lines: 22-23
 
     from discord.ext import commands
 
@@ -185,4 +185,105 @@ Here is an example of what you are able to do by subclassing
 
 Writing A Help Command
 -------------------------
+
+For this tutorial, we will be using the standard :class:`~.commands.HelpCommand`.
+
+
+The Help Command Name
+~~~~~~~~~~~~~~~~~~~~~
+
+If you would like to use a different name for the help command, there is an option to change it:
+
+.. code-block:: python3
+
+    class MyHelpCommand(commands.HelpCommand):
+        def __init__(self):
+            super().__init__(command_attrs={'name': 'commands'})
+
+This allows the help command to be called via ``!commands``.
+
+
+Bot Help
+~~~~~~~~
+
+The main help sent when ``!help`` is called can be described here:
+
+::
+
+    This is my cool bot made in discord.py!                          ]--- Description
+
+    Help:                                                            ]--- Cog Name
+      sos     Send Help!                                             ]--- Cog Command
+    ​No Category:                                                     ]--- No Cog
+      add     Adds two numbers together.                             \
+      choose  Chooses between multiple choices. This'll get cut...   |
+      cool    Says if a user is cool.                                |
+      help    Shows this message.                                    |--- No Cog Commands
+      joined  Says when a member joined.                             |
+      repeat  Repeats a message multiple times.                      |
+      roll    Rolls a dice in NdN format.                            /
+
+    Type ?help command for more info on a command.                   \___ Ending Note
+    You can also type ?help category for more info on a category.    /
+
+Most of this is done within :meth:`~commands.DefaultHelpCommand.send_bot_help`.
+
+To make it a little easier, it should start off with:
+
+.. code-block:: python3
+
+    async def send_bot_help(self, mapping):
+        ctx = self.context
+        bot = ctx.bot
+
+
+Description
++++++++++++
+
+By default, the description is set when :class:`commands.Bot` is instantiated, with the
+``description`` keyword argument: ``commands.Bot(description='Hey! This is my Cool Bot:tm:')``.
+
+However, it is possible to disregard that, as it is only used in :meth:`~commands.DefaultHelpCommand.send_bot_help`.
+This can be done by adding the line ``self.paginator.add_line('My Description!', empty=True)`` to the end of
+the function.
+
+In the default help command, the description is added first, then the category and commands are added.
+The position of the description is entirely your choice.
+
+
+Cog Name
+++++++++
+
+The cog name is usually determined by :attr:`~commands.Cog.qualified_name` - or ``No Category`` - and is formatted to
+be: ``My Cog:`` or ``No Category:``.
+
+In the default help command it is done as so:
+
+.. code-block:: python3
+    :emphasize-lines: 1-5
+
+        no_category = '\u200b{0.no_category}:'.format(self)                                # if there's no category
+        def get_category(command, *, no_category=no_category):                             # gets the correct category name
+            cog = command.cog
+            return cog.qualified_name + ':' if cog is not None else no_category
+
+        filtered = await self.filter_commands(bot.commands, sort=True, key=get_category)   # filters the commands,
+        max_size = self.get_max_size(filtered)
+        to_iterate = itertools.groupby(filtered, key=get_category)
+
+The first few lines describe the formatting, then the next lines format each command to its category correctly.
+``No Category:`` is set when you instantiate :class:`commands.DefaultHelpCommand`: ``HelpCommand(no_category='Misc.')``.
+You could completely disregard this property, and set it as the ``no_category`` variable: ``no_category = '<Miscellaneous>'``
+The next local function, ``get_category`` determines :attr:`commands.Command.cog`'s name via
+:attr:`commands.Cog.qualified_name`.
+
+.. code-block:: python3
+
+        no_category = '<Miscellaneous>'
+        def get_category(command, *, no_category=no_category):
+            cog = command.cog
+            return '<' + cog.qualified_name + '>' if cog is not None else no_category
+
+Command
++++++++
 
