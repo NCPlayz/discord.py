@@ -163,7 +163,7 @@ class Context(discord.abc.Messageable):
             raise ValueError('This context is not valid.')
 
         # some state to revert to when we're done
-        index, previous = view.index, view.previous
+        index, previous, separator = view.index, view.previous, view.separator
         invoked_with = self.invoked_with
         invoked_subcommand = self.invoked_subcommand
         subcommand_passed = self.subcommand_passed
@@ -182,6 +182,7 @@ class Context(discord.abc.Messageable):
             self.command = cmd
             view.index = index
             view.previous = previous
+            view.separator = separator
             self.invoked_with = invoked_with
             self.invoked_subcommand = invoked_subcommand
             self.subcommand_passed = subcommand_passed

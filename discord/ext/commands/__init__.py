@@ -18,3 +18,4 @@ from .help import *
 from .converter import *
 from .cooldowns import *
 from .cog import *
+from .view import Separator, Encapsulator
