@@ -671,7 +671,7 @@ class Command(_BaseCommand):
         if isinstance(qual, Separator):
             view.separator = qual
         elif isinstance(qual, Encapsulator):
-            view.available_quotes = {qual.start: qual.end}
+            view.encapsulator = qual
 
         if self.cog is not None:
             # we have 'self' as the first parameter so just advance
