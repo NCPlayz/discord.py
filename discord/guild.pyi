@@ -18,6 +18,7 @@ from .permissions import Permissions
 from .widget import Widget
 from .asset import Asset
 from .emoji import Emoji
+from .flags import SystemChannelFlags
 
 from typing import List, Optional, Tuple, Dict, Union, NamedTuple, Any, Iterator
 from typing_extensions import Literal
@@ -28,17 +29,6 @@ _VALID_ANIMATED_ICON_FORMATS = Literal[_VALID_STATIC_ICON_FORMATS, 'gif']
 class BanEntry(NamedTuple):
     user: User
     reason: str
-
-class SystemChannelFlags:
-    value: int
-    join_notifications: bool
-    premium_subscriptions: bool
-
-    def __init__(self, *, join_notifications: bool = ..., premium_subscriptions: bool = ...) -> None: ...
-    def __eq__(self, other: Any) -> bool: ...
-    def __ne__(self, other: Any) -> bool: ...
-    def __hash__(self) -> int: ...
-    def __iter__(self) -> Iterator[Tuple[str, bool]]: ...
 
 class Guild(Hashable):
     name: str

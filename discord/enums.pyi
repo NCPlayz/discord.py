@@ -175,6 +175,8 @@ class UserFlags(Enum):
     hypesquad_brilliance: int
     hypesquad_balance: int
     early_supporter: int
+    team_user: int
+    system: int
 
 class ActivityType(Enum):
     unknown: int

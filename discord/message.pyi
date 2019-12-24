@@ -12,6 +12,7 @@ from .emoji import Emoji
 from .partial_emoji import PartialEmoji
 from .calls import CallMessage
 from .role import Role
+from .flags import MessageFlags
 
 from typing import Any, Optional, List, Union, BinaryIO
 from typing_extensions import TypedDict
@@ -60,6 +61,7 @@ class Message:
     reactions: List[Reaction]
     activity: Optional[MessageActivity]
     application: Optional[MessageApplication]
+    flags: MessageFlags
 
     @property
     def guild(self) -> Optional[Guild]: ...
@@ -85,6 +87,7 @@ class Message:
     async def delete(self, *, delay: Optional[float] = ...) -> None: ...
     async def edit(self, *, content: Optional[str] = ..., embed: Optional[Embed] = ...,
                    suppress: bool = ..., delete_after: Optional[float] = ...) -> None: ...
+    async def publish(self) -> None: ...
     async def pin(self) -> None: ...
     async def unpin(self) -> None: ...
     async def add_reaction(self, emoji: Union[Emoji, Reaction, PartialEmoji, str]) -> None: ...
