@@ -27,10 +27,10 @@ DEALINGS IN THE SOFTWARE.
 import abc
 import copy
 import asyncio
-from collections import namedtuple
 
 from .iterators import HistoryIterator
 from .context_managers import Typing
+from .enums import ChannelType
 from .errors import InvalidArgument, ClientException, HTTPException
 from .permissions import PermissionOverwrite, Permissions
 from .role import Role
@@ -52,7 +52,7 @@ class Snowflake(metaclass=abc.ABCMeta):
     abstract base class.
 
     If you want to create a snowflake on your own, consider using
-    :class:`Object`.
+    :class:`.Object`.
 
     Attributes
     -----------
@@ -162,7 +162,22 @@ class PrivateChannel(metaclass=abc.ABCMeta):
             return NotImplemented
         return NotImplemented
 
-_Overwrites = namedtuple('_Overwrites', 'id allow deny type')
+class _Overwrites:
+    __slots__ = ('id', 'allow', 'deny', 'type')
+
+    def __init__(self, **kwargs):
+        self.id = kwargs.pop('id')
+        self.allow = kwargs.pop('allow', 0)
+        self.deny = kwargs.pop('deny', 0)
+        self.type = kwargs.pop('type')
+
+    def _asdict(self):
+        return {
+            'id': self.id,
+            'allow': self.allow,
+            'deny': self.deny,
+            'type': self.type,
+        }
 
 class GuildChannel:
     """An ABC that details the common operations on a Discord guild channel.
@@ -279,6 +294,15 @@ class GuildChannel:
 
                 perms.append(payload)
             options['permission_overwrites'] = perms
+
+        try:
+            ch_type = options['type']
+        except KeyError:
+            pass
+        else:
+            if not isinstance(ch_type, ChannelType):
+                raise InvalidArgument('type field must be of type ChannelType')
+            options['type'] = ch_type.value
 
         if options:
             data = await self._state.http.edit_channel(self.id, reason=reason, **options)
@@ -587,7 +611,7 @@ class GuildChannel:
         target: Union[:class:`~discord.Member`, :class:`~discord.Role`]
             The member or role to overwrite permissions for.
         overwrite: Optional[:class:`~discord.PermissionOverwrite`]
-            The permissions to allow and deny to the target, or `None` to
+            The permissions to allow and deny to the target, or ``None`` to
             delete the overwrite.
         \*\*permissions
             A keyword argument list of permissions to set for ease of use.
@@ -689,11 +713,11 @@ class GuildChannel:
         Parameters
         ------------
         max_age: :class:`int`
-            How long the invite should last. If it's 0 then the invite
-            doesn't expire. Defaults to 0.
+            How long the invite should last in seconds. If it's 0 then the invite
+            doesn't expire. Defaults to ``0``.
         max_uses: :class:`int`
             How many uses the invite could be used for. If it's 0 then there
-            are unlimited uses. Defaults to 0.
+            are unlimited uses. Defaults to ``0``.
         temporary: :class:`bool`
             Denotes that the invite grants temporary membership
             (i.e. they get kicked after they disconnect). Defaults to ``False``.
@@ -770,7 +794,7 @@ class Messageable(metaclass=abc.ABCMeta):
 
     async def send(self, content=None, *, tts=False, embed=None, file=None,
                                           files=None, delete_after=None, nonce=None,
-                                          mentions=None):
+                                          allowed_mentions=None):
         """|coro|
 
         Sends a message to the destination with the content given.
@@ -806,7 +830,7 @@ class Messageable(metaclass=abc.ABCMeta):
             If provided, the number of seconds to wait in the background
             before deleting the message we just sent. If the deletion fails,
             then it is silently ignored.
-        mentions: :class:`AllowedMentions`
+        allowed_mentions: :class:`~discord.AllowedMentions`
             Controls the mentions being processed in this message.
 
             .. versionadded:: 1.4
@@ -833,11 +857,13 @@ class Messageable(metaclass=abc.ABCMeta):
         if embed is not None:
             embed = embed.to_dict()
 
-        if mentions is not None:
-            if state.mentions is not None:
-                mentions = state.mentions.merge(mentions).to_dict()
+        if allowed_mentions is not None:
+            if state.allowed_mentions is not None:
+                allowed_mentions = state.allowed_mentions.merge(allowed_mentions).to_dict()
             else:
-                mentions = mentions.to_dict()
+                allowed_mentions = allowed_mentions.to_dict()
+        else:
+            allowed_mentions = state.allowed_mentions and state.allowed_mentions.to_dict()
 
         if file is not None and files is not None:
             raise InvalidArgument('cannot pass both file and files parameter to send()')
@@ -860,12 +886,13 @@ class Messageable(metaclass=abc.ABCMeta):
 
             try:
                 data = await state.http.send_files(channel.id, files=files, content=content, tts=tts,
-                                                   embed=embed, nonce=nonce, mentions=mentions)
+                                                   embed=embed, nonce=nonce, allowed_mentions=allowed_mentions)
             finally:
                 for f in files:
                     f.close()
         else:
-            data = await state.http.send_message(channel.id, content, tts=tts, embed=embed, nonce=nonce, mentions=mentions)
+            data = await state.http.send_message(channel.id, content, tts=tts, embed=embed,
+                                                                      nonce=nonce, allowed_mentions=allowed_mentions)
 
         ret = state.create_message(channel=channel, data=data)
         if delete_after is not None:

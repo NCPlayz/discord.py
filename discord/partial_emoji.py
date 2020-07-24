@@ -25,6 +25,8 @@ DEALINGS IN THE SOFTWARE.
 """
 
 from .asset import Asset
+from . import utils
+
 
 class _EmojiTag:
     __slots__ = ()
@@ -77,7 +79,11 @@ class PartialEmoji(_EmojiTag):
 
     @classmethod
     def from_dict(cls, data):
-        return cls(animated=data.get('animated', False), id=data.get('id'), name=data.get('name'))
+        return cls(
+            animated=data.get('animated', False),
+            id=utils._get_as_snowflake(data, 'id'),
+            name=data.get('name'),
+        )
 
     def to_dict(self):
         o = { 'name': self.name }
@@ -88,8 +94,8 @@ class PartialEmoji(_EmojiTag):
         return o
 
     @classmethod
-    def with_state(cls, state, *, animated, name, id=None):
-        self = cls(animated=animated, name=name, id=id)
+    def with_state(cls, state, *, name, animated=False, id=None):
+        self = cls(name=name, animated=animated, id=id)
         self._state = state
         return self
 

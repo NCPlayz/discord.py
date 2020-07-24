@@ -1,3 +1,29 @@
+# -*- coding: utf-8 -*-
+
+"""
+The MIT License (MIT)
+
+Copyright (c) 2015-2020 Rapptz
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+"""
+
 import asyncio
 import datetime
 import aiohttp
@@ -68,6 +94,7 @@ class Loop:
         sleep_until = discord.utils.sleep_until
         self._next_iteration = datetime.datetime.now(datetime.timezone.utc)
         try:
+            await asyncio.sleep(0) # allows canceling in before_loop
             while True:
                 self._last_iteration = self._next_iteration
                 self._next_iteration = self._get_next_sleep_time()
@@ -105,8 +132,15 @@ class Loop:
     def __get__(self, obj, objtype):
         if obj is None:
             return self
-        self._injected = obj
-        return self
+
+        copy = Loop(self.coro, seconds=self.seconds, hours=self.hours, minutes=self.minutes,
+                               count=self.count, reconnect=self.reconnect, loop=self.loop)
+        copy._injected = obj
+        copy._before_loop = self._before_loop
+        copy._after_loop = self._after_loop
+        copy._error = self._error
+        setattr(obj, self.coro.__name__, copy)
+        return copy
 
     @property
     def current_loop(self):
@@ -285,7 +319,8 @@ class Loop:
         """
         return not bool(self._task.done()) if self._task else False
 
-    async def _error(self, exception):
+    async def _error(self, *args):
+        exception = args[-1]
         print('Unhandled exception in internal background task {0.__name__!r}.'.format(self.coro), file=sys.stderr)
         traceback.print_exception(type(exception), exception, exception.__traceback__, file=sys.stderr)
 
@@ -436,6 +471,13 @@ def loop(*, seconds=0, minutes=0, hours=0, count=None, reconnect=True, loop=None
         The function was not a coroutine.
     """
     def decorator(func):
-        return Loop(func, seconds=seconds, minutes=minutes, hours=hours,
-                          count=count, reconnect=reconnect, loop=loop)
+        kwargs = {
+            'seconds': seconds,
+            'minutes': minutes,
+            'hours': hours,
+            'count': count,
+            'reconnect': reconnect,
+            'loop': loop
+        }
+        return Loop(func, **kwargs)
     return decorator

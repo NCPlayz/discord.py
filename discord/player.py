@@ -180,7 +180,7 @@ class FFmpegPCMAudio(FFmpegAudio):
     ------------
     source: Union[:class:`str`, :class:`io.BufferedIOBase`]
         The input that ffmpeg will take and convert to PCM bytes.
-        If ``pipe`` is True then this is a file-like object that is
+        If ``pipe`` is ``True`` then this is a file-like object that is
         passed to the stdin of ffmpeg.
     executable: :class:`str`
         The executable name (and path) to use. Defaults to ``ffmpeg``.
@@ -203,7 +203,7 @@ class FFmpegPCMAudio(FFmpegAudio):
 
     def __init__(self, source, *, executable='ffmpeg', pipe=False, stderr=None, before_options=None, options=None):
         args = []
-        subprocess_kwargs = {'stdin': source if pipe else None, 'stderr': stderr}
+        subprocess_kwargs = {'stdin': source if pipe else subprocess.DEVNULL, 'stderr': stderr}
 
         if isinstance(before_options, str):
             args.extend(shlex.split(before_options))
@@ -233,14 +233,14 @@ class FFmpegOpusAudio(FFmpegAudio):
 
     This launches a sub-process to a specific input file given.  However, rather than
     producing PCM packets like :class:`FFmpegPCMAudio` does that need to be encoded to
-    opus, this class produces opus packets, skipping the encoding step done by the library.
+    Opus, this class produces Opus packets, skipping the encoding step done by the library.
 
     Alternatively, instead of instantiating this class directly, you can use
     :meth:`FFmpegOpusAudio.from_probe` to probe for bitrate and codec information.  This
-    can be used to opportunistically skip pointless re-encoding of existing opus audio data
+    can be used to opportunistically skip pointless re-encoding of existing Opus audio data
     for a boost in performance at the cost of a short initial delay to gather the information.
     The same can be achieved by passing ``copy`` to the ``codec`` parameter, but only if you
-    know that the input source is opus encoded beforehand.
+    know that the input source is Opus encoded beforehand.
 
     .. versionadded:: 1.3
 
@@ -252,22 +252,22 @@ class FFmpegOpusAudio(FFmpegAudio):
     Parameters
     ------------
     source: Union[:class:`str`, :class:`io.BufferedIOBase`]
-        The input that ffmpeg will take and convert to PCM bytes.
-        If ``pipe`` is True then this is a file-like object that is
+        The input that ffmpeg will take and convert to Opus bytes.
+        If ``pipe`` is ``True`` then this is a file-like object that is
         passed to the stdin of ffmpeg.
     bitrate: :class:`int`
         The bitrate in kbps to encode the output to.  Defaults to ``128``.
     codec: Optional[:class:`str`]
         The codec to use to encode the audio data.  Normally this would be
         just ``libopus``, but is used by :meth:`FFmpegOpusAudio.from_probe` to
-        opportunistically skip pointlessly re-encoding opus audio data by passing
+        opportunistically skip pointlessly re-encoding Opus audio data by passing
         ``copy`` as the codec value.  Any values other than ``copy``, ``opus``, or
         ``libopus`` will be considered ``libopus``.  Defaults to ``libopus``.
 
         .. warning::
 
             Do not provide this parameter unless you are certain that the audio input is
-            already opus encoded.  For typical use :meth:`FFmpegOpusAudio.from_probe`
+            already Opus encoded.  For typical use :meth:`FFmpegOpusAudio.from_probe`
             should be used to determine the proper value for this parameter.
 
     executable: :class:`str`
@@ -293,7 +293,7 @@ class FFmpegOpusAudio(FFmpegAudio):
                  pipe=False, stderr=None, before_options=None, options=None):
 
         args = []
-        subprocess_kwargs = {'stdin': source if pipe else None, 'stderr': stderr}
+        subprocess_kwargs = {'stdin': source if pipe else subprocess.DEVNULL, 'stderr': stderr}
 
         if isinstance(before_options, str):
             args.extend(shlex.split(before_options))
@@ -524,7 +524,7 @@ class PCMVolumeTransformer(AudioSource):
 
     @property
     def volume(self):
-        """Retrieves or sets the volume as a floating point percentage (e.g. 1.0 for 100%)."""
+        """Retrieves or sets the volume as a floating point percentage (e.g. ``1.0`` for 100%)."""
         return self._volume
 
     @volume.setter

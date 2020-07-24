@@ -33,6 +33,7 @@ import struct
 import sys
 import time
 import threading
+import traceback
 import zlib
 
 import websockets
@@ -66,6 +67,7 @@ class KeepAliveHandler(threading.Thread):
         shard_id = kwargs.pop('shard_id', None)
         threading.Thread.__init__(self, *args, **kwargs)
         self.ws = ws
+        self._main_thread_id = ws.thread_id
         self.interval = interval
         self.daemon = True
         self.shard_id = shard_id
@@ -102,11 +104,18 @@ class KeepAliveHandler(threading.Thread):
                 total = 0
                 while True:
                     try:
-                        f.result(5)
+                        f.result(10)
                         break
                     except concurrent.futures.TimeoutError:
-                        total += 5
-                        log.warning(self.block_msg, total)
+                        total += 10
+                        try:
+                            frame = sys._current_frames()[self._main_thread_id]
+                        except KeyError:
+                            msg = self.block_msg
+                        else:
+                            stack = traceback.format_stack(frame)
+                            msg = '%s\nLoop thread traceback (most recent call last):\n%s' % (self.block_msg, ''.join(stack))
+                        log.warning(msg, total)
 
             except Exception:
                 self.stop()
@@ -215,6 +224,7 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
         self._dispatch_listeners = []
         # the keep alive
         self._keep_alive = None
+        self.thread_id = threading.get_ident()
 
         # ws related stuff
         self.session_id = None
@@ -245,7 +255,7 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
 
         client._connection._update_references(ws)
 
-        log.info('Created websocket connected to %s', gateway)
+        log.debug('Created websocket connected to %s', gateway)
 
         # poll event for OP Hello
         await ws.poll_event()
@@ -259,7 +269,7 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
             await ws.ensure_open()
         except websockets.exceptions.ConnectionClosed:
             # ws got closed so let's just do a regular IDENTIFY connect.
-            log.info('RESUME failed (the websocket decided to close) for Shard ID %s. Retrying.', shard_id)
+            log.warning('RESUME failed (the websocket decided to close) for Shard ID %s. Retrying.', shard_id)
             return await cls.from_client(client, shard_id=shard_id)
         else:
             return ws
@@ -373,7 +383,7 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
                 # "reconnect" can only be handled by the Client
                 # so we terminate our connection and raise an
                 # internal exception signalling to reconnect.
-                log.info('Received RECONNECT opcode.')
+                log.debug('Received RECONNECT opcode.')
                 await self.close()
                 raise ResumeWebSocket(self.shard_id)
 
@@ -525,15 +535,25 @@ class DiscordWebSocket(websockets.client.WebSocketClientProtocol):
         }
         await self.send_as_json(payload)
 
-    async def request_chunks(self, guild_id, query, limit):
+    async def request_chunks(self, guild_id, query=None, *, limit, user_ids=None, nonce=None):
         payload = {
             'op': self.REQUEST_MEMBERS,
             'd': {
-                'guild_id': str(guild_id),
-                'query': query,
+                'guild_id': guild_id,
                 'limit': limit
             }
         }
+
+        if nonce:
+            payload['d']['nonce'] = nonce
+
+        if user_ids:
+            payload['d']['user_ids'] = user_ids
+
+        if query is not None:
+            payload['d']['query'] = query
+
+
         await self.send_as_json(payload)
 
     async def voice_state(self, guild_id, channel_id, self_mute=False, self_deaf=False):
@@ -648,6 +668,7 @@ class DiscordVoiceWebSocket(websockets.client.WebSocketClientProtocol):
         ws.gateway = gateway
         ws._connection = client
         ws._max_heartbeat_timeout = 60.0
+        ws.thread_id = threading.get_ident()
 
         if resume:
             await ws.resume()
@@ -752,8 +773,10 @@ class DiscordVoiceWebSocket(websockets.client.WebSocketClientProtocol):
     def average_latency(self):
         """:class:`list`: Average of last 20 HEARTBEAT latencies."""
         heartbeat = self._keep_alive
-        average_latency = sum(heartbeat.recent_ack_latencies)/len(heartbeat.recent_ack_latencies)
-        return float('inf') if heartbeat is None else average_latency
+        if heartbeat is None:
+            return float('inf')
+
+        return sum(heartbeat.recent_ack_latencies) / len(heartbeat.recent_ack_latencies)
 
     async def load_secret_key(self, data):
         log.info('received secret key for voice connection')

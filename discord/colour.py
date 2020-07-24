@@ -28,7 +28,7 @@ import colorsys
 
 class Colour:
     """Represents a Discord role colour. This class is similar
-    to an (red, green, blue) :class:`tuple`.
+    to a (red, green, blue) :class:`tuple`.
 
     There is an alias for this called Color.
 
@@ -114,7 +114,7 @@ class Colour:
 
     @classmethod
     def default(cls):
-        """A factory method that returns a :class:`Colour` with a value of 0."""
+        """A factory method that returns a :class:`Colour` with a value of ``0``."""
         return cls(0)
 
     @classmethod
@@ -202,20 +202,28 @@ class Colour:
         """A factory method that returns a :class:`Colour` with a value of ``0x95a5a6``."""
         return cls(0x95a5a6)
 
+    lighter_gray = lighter_grey
+
     @classmethod
     def dark_grey(cls):
         """A factory method that returns a :class:`Colour` with a value of ``0x607d8b``."""
         return cls(0x607d8b)
+
+    dark_gray = dark_grey
 
     @classmethod
     def light_grey(cls):
         """A factory method that returns a :class:`Colour` with a value of ``0x979c9f``."""
         return cls(0x979c9f)
 
+    light_gray = light_grey
+
     @classmethod
     def darker_grey(cls):
         """A factory method that returns a :class:`Colour` with a value of ``0x546e7a``."""
         return cls(0x546e7a)
+
+    darker_gray = darker_grey
 
     @classmethod
     def blurple(cls):

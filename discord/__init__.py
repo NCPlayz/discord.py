@@ -15,7 +15,7 @@ __title__ = 'discord'
 __author__ = 'Rapptz'
 __license__ = 'MIT'
 __copyright__ = 'Copyright 2015-2020 Rapptz'
-__version__ = '1.3.3'
+__version__ = '1.4.0a'
 
 from collections import namedtuple
 import logging
@@ -28,7 +28,7 @@ from .partial_emoji import PartialEmoji
 from .activity import *
 from .channel import *
 from .guild import Guild
-from .flags import SystemChannelFlags, MessageFlags
+from .flags import *
 from .relationship import Relationship
 from .member import Member, VoiceState
 from .message import Message, Attachment
@@ -39,7 +39,9 @@ from .permissions import Permissions, PermissionOverwrite
 from .role import Role
 from .file import File
 from .colour import Color, Colour
+from .integrations import Integration, IntegrationAccount
 from .invite import Invite, PartialInviteChannel, PartialInviteGuild
+from .template import Template
 from .widget import Widget, WidgetMember, WidgetChannel
 from .object import Object
 from .reaction import Reaction
@@ -57,7 +59,7 @@ from .team import *
 
 VersionInfo = namedtuple('VersionInfo', 'major minor micro releaselevel serial')
 
-version_info = VersionInfo(major=1, minor=3, micro=3, releaselevel='final', serial=0)
+version_info = VersionInfo(major=1, minor=4, micro=0, releaselevel='alpha', serial=0)
 
 try:
     from logging import NullHandler
