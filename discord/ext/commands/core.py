@@ -977,7 +977,6 @@ class Command(_BaseCommand):
             return ''
 
         result = []
-        result_params = []
         for name, param in params.items():
             greedy = isinstance(param.annotation, converters._Greedy)
 
