@@ -1119,6 +1119,37 @@ div.code-block-caption {
   font-weight: bold;
 }
 
+div.controls {
+  height: 20px;
+  font-size: 2em;
+  text-align: center;
+}
+
+div.controls a {
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+}
+
+.class-anchor-offset {
+  position: relative;
+  scroll-margin-top: 85px;
+}
+
+.control-left {
+  float: left;
+}
+
+.control-right {
+  float: right;
+}
+
+/* hidden by default, displayed later by pages.js */
+#api-reference {
+  display: none;
+}
+
 
 /* desktop stuff */
 
@@ -1218,6 +1249,20 @@ div.code-block-caption {
   #hamburger-toggle, #settings-toggle {
     display: none;
 
+  }
+
+  div.controls {
+    height: 1px;
+    font-size: 1em;
+  }
+
+  .class-anchor-offset {
+    position: relative;
+    scroll-margin-top: 20px;
+  }
+
+  .controls {
+    padding-bottom: 10px;
   }
 }
 

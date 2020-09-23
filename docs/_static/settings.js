@@ -82,9 +82,26 @@ function setTheme(value) {
   }
 }
 
+function toggleClassicAPIRef(add) {
+  if (apiReference) {
+    if (apiReference.parentElement.tagName !== "MAIN") {
+      let event = new CustomEvent('APIRefStyle', { detail: { classic: true } });
+      window.dispatchEvent(event);
+      enableScroll = add;
+      return;
+    }
+    let event = new CustomEvent('APIRefStyle', { detail: { classic: add } });
+    window.dispatchEvent(event);
+    enableScroll = add;
+  } else {
+    enableScroll = true;
+  }
+}
+
 const settings = [
   new CheckboxSetting('useSerifFont', false, getRootAttributeToggle('font', 'serif')),
-  new RadioSetting('setTheme', 'automatic', setTheme)
+  new RadioSetting('setTheme', 'automatic', setTheme),
+  new CheckboxSetting('useClassicAPIRef', false, toggleClassicAPIRef)
 ]
 
 function updateSetting(element) {

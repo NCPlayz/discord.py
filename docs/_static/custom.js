@@ -5,6 +5,9 @@ let bottomHeightThreshold, sections;
 let hamburgerToggle;
 let mobileSearch;
 let sidebar;
+let apiReference;
+let enableScroll = false;
+let currentSection;
 
 class Modal {
   constructor(element) {
@@ -13,7 +16,7 @@ class Modal {
 
   close() {
     activeModal = null;
-    this.element.style.display = 'none'
+    this.element.style.display = 'none';
   }
 
   open() {
@@ -21,7 +24,7 @@ class Modal {
       activeModal.close();
     }
     activeModal = this;
-    this.element.style.display = 'flex'
+    this.element.style.display = 'flex';
   }
 }
 
@@ -49,12 +52,17 @@ class SearchBar {
 
 }
 
+function changeDocumentation(element) {
+  window.location = element.value;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   mobileSearch = new SearchBar();
 
   bottomHeightThreshold = document.documentElement.scrollHeight - 30;
   sections = document.querySelectorAll('section');
   hamburgerToggle = document.getElementById('hamburger-toggle');
+  apiReference = document.getElementById('api-reference');
 
   if (hamburgerToggle) {
     hamburgerToggle.addEventListener('click', (e) => {

@@ -98,6 +98,10 @@ class Sidebar {
 }
 
 function getCurrentSection() {
+  if (!enableScroll) {
+    return document.querySelector(window.location.hash);
+  }
+
   let currentSection;
   if (window.scrollY + window.innerHeight > bottomHeightThreshold) {
     currentSection = sections[sections.length - 1];
