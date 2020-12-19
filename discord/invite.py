@@ -29,9 +29,8 @@ from .utils import parse_time, snowflake_time, _get_as_snowflake
 from .object import Object
 from .mixins import Hashable
 from .enums import ChannelType, VerificationLevel, try_enum
-from collections import namedtuple
 
-class PartialInviteChannel(namedtuple('PartialInviteChannel', 'id name type')):
+class PartialInviteChannel:
     """Represents a "partial" invite channel.
 
     This model will be given when the user is not part of the
@@ -65,10 +64,18 @@ class PartialInviteChannel(namedtuple('PartialInviteChannel', 'id name type')):
         The partial channel's type.
     """
 
-    __slots__ = ()
+    __slots__ = ('id', 'name', 'type')
+
+    def __init__(self, **kwargs):
+        self.id = kwargs.pop('id')
+        self.name = kwargs.pop('name')
+        self.type = kwargs.pop('type')
 
     def __str__(self):
         return self.name
+
+    def __repr__(self):
+        return '<PartialInviteChannel id={0.id} name={0.name} type={0.type!r}>'.format(self)
 
     @property
     def mention(self):
@@ -155,9 +162,22 @@ class PartialInviteGuild:
         """:class:`Asset`: Returns the guild's icon asset."""
         return self.icon_url_as()
 
-    def icon_url_as(self, *, format='webp', size=1024):
-        """The same operation as :meth:`Guild.icon_url_as`."""
-        return Asset._from_guild_image(self._state, self.id, self.icon, 'icons', format=format, size=size)
+    def is_icon_animated(self):
+        """:class:`bool`: Returns ``True`` if the guild has an animated icon.
+
+        .. versionadded:: 1.4
+        """
+        return bool(self.icon and self.icon.startswith('a_'))
+
+    def icon_url_as(self, *, format=None, static_format='webp', size=1024):
+        """The same operation as :meth:`Guild.icon_url_as`.
+
+        Returns
+        --------
+        :class:`Asset`
+            The resulting CDN asset.
+        """
+        return Asset._from_guild_icon(self._state, self, format=format, static_format=static_format, size=size)
 
     @property
     def banner_url(self):
@@ -165,7 +185,13 @@ class PartialInviteGuild:
         return self.banner_url_as()
 
     def banner_url_as(self, *, format='webp', size=2048):
-        """The same operation as :meth:`Guild.banner_url_as`."""
+        """The same operation as :meth:`Guild.banner_url_as`.
+
+        Returns
+        --------
+        :class:`Asset`
+            The resulting CDN asset.
+        """
         return Asset._from_guild_image(self._state, self.id, self.banner, 'banners', format=format, size=size)
 
     @property
@@ -174,7 +200,13 @@ class PartialInviteGuild:
         return self.splash_url_as()
 
     def splash_url_as(self, *, format='webp', size=2048):
-        """The same operation as :meth:`Guild.splash_url_as`."""
+        """The same operation as :meth:`Guild.splash_url_as`.
+
+        Returns
+        --------
+        :class:`Asset`
+            The resulting CDN asset.
+        """
         return Asset._from_guild_image(self._state, self.id, self.splash, 'splashes', format=format, size=size)
 
 class Invite(Hashable):

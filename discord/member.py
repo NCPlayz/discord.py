@@ -25,6 +25,7 @@ DEALINGS IN THE SOFTWARE.
 """
 
 import itertools
+import sys
 from operator import attrgetter
 
 import discord.abc
@@ -60,7 +61,7 @@ class VoiceState:
     afk: :class:`bool`
         Indicates if the user is currently in the AFK channel in the guild.
     channel: Optional[:class:`VoiceChannel`]
-        The voice channel that the user is currently connected to. None if the user
+        The voice channel that the user is currently connected to. ``None`` if the user
         is not currently in a voice channel.
     """
 
@@ -148,21 +149,25 @@ class Member(discord.abc.Messageable, _BaseUser):
     Attributes
     ----------
     joined_at: Optional[:class:`datetime.datetime`]
-        A datetime object that specifies the date and time in UTC that the member joined the guild for
-        the first time. In certain cases, this can be ``None``.
+        A datetime object that specifies the date and time in UTC that the member joined the guild.
+        If the member left and rejoined the guild, this will be the latest date. In certain cases, this can be ``None``.
     activities: Tuple[Union[:class:`BaseActivity`, :class:`Spotify`]]
         The activities that the user is currently doing.
     guild: :class:`Guild`
         The guild that the member belongs to.
     nick: Optional[:class:`str`]
         The guild specific nickname of the user.
+    pending: :class:`bool`
+        Whether the member is pending member verification.
+
+        .. versionadded:: 1.6
     premium_since: Optional[:class:`datetime.datetime`]
         A datetime object that specifies the date and time in UTC when the member used their
         Nitro boost on the guild, if available. This could be ``None``.
     """
 
-    __slots__ = ('_roles', '_cs_roles', 'joined_at', 'premium_since', '_client_status',
-                 'activities', 'guild', 'nick', '_user', '_state')
+    __slots__ = ('_roles', 'joined_at', 'premium_since', '_client_status',
+                 'activities', 'guild', 'pending', 'nick', '_user', '_state')
 
     def __init__(self, *, data, guild, state):
         self._state = state
@@ -176,6 +181,7 @@ class Member(discord.abc.Messageable, _BaseUser):
         }
         self.activities = tuple(map(create_activity, data.get('activities', [])))
         self.nick = data.get('nick', None)
+        self.pending = data.get('pending', False)
 
     def __str__(self):
         return str(self._user)
@@ -199,6 +205,13 @@ class Member(discord.abc.Messageable, _BaseUser):
         data['user'] = author._to_minimal_user_json()
         return cls(data=data, guild=message.guild, state=message._state)
 
+    def _update_from_message(self, data):
+        self.joined_at = utils.parse_time(data.get('joined_at'))
+        self.premium_since = utils.parse_time(data.get('premium_since'))
+        self._update_roles(data)
+        self.nick = data.get('nick', None)
+        self.pending = data.get('pending', False)
+
     @classmethod
     def _try_upgrade(cls, *,  data, guild, state):
         # A User object with a 'member' key
@@ -215,10 +228,10 @@ class Member(discord.abc.Messageable, _BaseUser):
         clone = cls(data=data, guild=guild, state=state)
         to_return = cls(data=data, guild=guild, state=state)
         to_return._client_status = {
-            key: value
+            sys.intern(key): sys.intern(value)
             for key, value in data.get('client_status', {}).items()
         }
-        to_return._client_status[None] = data['status']
+        to_return._client_status[None] = sys.intern(data['status'])
         return to_return, clone
 
     @classmethod
@@ -231,13 +244,9 @@ class Member(discord.abc.Messageable, _BaseUser):
         self._client_status = member._client_status.copy()
         self.guild = member.guild
         self.nick = member.nick
+        self.pending = member.pending
         self.activities = member.activities
         self._state = member._state
-
-        try:
-            del self._cs_roles
-        except AttributeError:
-            pass
 
         # Reference will not be copied unless necessary by PRESENCE_UPDATE
         # See below
@@ -250,10 +259,6 @@ class Member(discord.abc.Messageable, _BaseUser):
 
     def _update_roles(self, data):
         self._roles = utils.SnowflakeList(map(int, data['roles']))
-        try:
-            del self._cs_roles
-        except AttributeError:
-            pass
 
     def _update(self, data):
         # the nickname change is optional,
@@ -263,33 +268,49 @@ class Member(discord.abc.Messageable, _BaseUser):
         except KeyError:
             pass
 
+        try:
+            self.pending = data['pending']
+        except KeyError:
+            pass
+
         self.premium_since = utils.parse_time(data.get('premium_since'))
         self._update_roles(data)
 
     def _presence_update(self, data, user):
         self.activities = tuple(map(create_activity, data.get('activities', [])))
         self._client_status = {
-            key: value
+            sys.intern(key): sys.intern(value)
             for key, value in data.get('client_status', {}).items()
         }
-        self._client_status[None] = data['status']
+        self._client_status[None] = sys.intern(data['status'])
 
         if len(user) > 1:
-            u = self._user
-            original = (u.name, u.avatar, u.discriminator)
-            # These keys seem to always be available
-            modified = (user['username'], user['avatar'], user['discriminator'])
-            if original != modified:
-                to_return = User._copy(self._user)
-                u.name, u.avatar, u.discriminator = modified
-                # Signal to dispatch on_user_update
-                return to_return, u
+            return self._update_inner_user(user)
         return False
+
+    def _update_inner_user(self, user):
+        u = self._user
+        original = (u.name, u.avatar, u.discriminator)
+        # These keys seem to always be available
+        modified = (user['username'], user['avatar'], user['discriminator'])
+        if original != modified:
+            to_return = User._copy(self._user)
+            u.name, u.avatar, u.discriminator = modified
+            # Signal to dispatch on_user_update
+            return to_return, u
 
     @property
     def status(self):
         """:class:`Status`: The member's overall status. If the value is unknown, then it will be a :class:`str` instead."""
         return try_enum(Status, self._client_status[None])
+
+    @property
+    def raw_status(self):
+        """:class:`str`: The member's overall status as a string value.
+
+        .. versionadded:: 1.5
+        """
+        return self._client_status[None]
 
     @status.setter
     def status(self, value):
@@ -312,7 +333,7 @@ class Member(discord.abc.Messageable, _BaseUser):
         return try_enum(Status, self._client_status.get('web', 'offline'))
 
     def is_on_mobile(self):
-        """A helper function that determines if a member is active on a mobile device."""
+        """:class:`bool`: A helper function that determines if a member is active on a mobile device."""
         return 'mobile' in self._client_status
 
     @property
@@ -344,7 +365,7 @@ class Member(discord.abc.Messageable, _BaseUser):
         """
         return self.colour
 
-    @utils.cached_slot_property('_cs_roles')
+    @property
     def roles(self):
         """List[:class:`Role`]: A :class:`list` of :class:`Role` that the member belongs to. Note
         that the first element of this list is always the default '@everyone'
@@ -382,7 +403,7 @@ class Member(discord.abc.Messageable, _BaseUser):
     @property
     def activity(self):
         """Union[:class:`BaseActivity`, :class:`Spotify`]: Returns the primary
-        activity the user is currently doing. Could be None if no activity is being done.
+        activity the user is currently doing. Could be ``None`` if no activity is being done.
 
         .. note::
 
@@ -398,6 +419,11 @@ class Member(discord.abc.Messageable, _BaseUser):
         -----------
         message: :class:`Message`
             The message to check if you're mentioned in.
+
+        Returns
+        -------
+        :class:`bool`
+            Indicates if the member is mentioned in the message.
         """
         if message.guild is None or message.guild.id != self.guild.id:
             return False
@@ -422,8 +448,13 @@ class Member(discord.abc.Messageable, _BaseUser):
 
         Parameters
         -----------
-        channel: :class:`Channel`
+        channel: :class:`abc.GuildChannel`
             The channel to check your permissions for.
+
+        Returns
+        -------
+        :class:`Permissions`
+            The resolved permissions for the member.
         """
         return channel.permissions_for(self)
 
@@ -434,11 +465,15 @@ class Member(discord.abc.Messageable, _BaseUser):
         This is useful for figuring where a member stands in the role
         hierarchy chain.
         """
-        return self.roles[-1]
+        guild = self.guild
+        if len(self._roles) == 0:
+            return guild.default_role
+
+        return max(guild.get_role(rid) or guild.default_role for rid in self._roles)
 
     @property
     def guild_permissions(self):
-        """Returns the member's guild permissions.
+        """:class:`Permissions`: Returns the member's guild permissions.
 
         This only takes into consideration the guild permissions
         and not most of the implied permissions or any of the

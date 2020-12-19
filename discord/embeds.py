@@ -224,7 +224,7 @@ class Embed:
 
     @property
     def footer(self):
-        """Returns an ``EmbedProxy`` denoting the footer contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the footer contents.
 
         See :meth:`set_footer` for possible values you can access.
 
@@ -257,7 +257,7 @@ class Embed:
 
     @property
     def image(self):
-        """Returns an ``EmbedProxy`` denoting the image contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the image contents.
 
         Possible attributes you can access are:
 
@@ -286,7 +286,10 @@ class Embed:
         """
 
         if url is EmptyEmbed:
-            del self._image
+            try:
+                del self._image
+            except AttributeError:
+                pass
         else:
             self._image = {
                 'url': str(url)
@@ -296,7 +299,7 @@ class Embed:
 
     @property
     def thumbnail(self):
-        """Returns an ``EmbedProxy`` denoting the thumbnail contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the thumbnail contents.
 
         Possible attributes you can access are:
 
@@ -325,7 +328,10 @@ class Embed:
         """
 
         if url is EmptyEmbed:
-            del self._thumbnail
+            try:
+                del self._thumbnail
+            except AttributeError:
+                pass
         else:
             self._thumbnail = {
                 'url': str(url)
@@ -335,7 +341,7 @@ class Embed:
 
     @property
     def video(self):
-        """Returns an ``EmbedProxy`` denoting the video contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the video contents.
 
         Possible attributes include:
 
@@ -349,7 +355,7 @@ class Embed:
 
     @property
     def provider(self):
-        """Returns an ``EmbedProxy`` denoting the provider contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the provider contents.
 
         The only attributes that might be accessed are ``name`` and ``url``.
 
@@ -359,7 +365,7 @@ class Embed:
 
     @property
     def author(self):
-        """Returns an ``EmbedProxy`` denoting the author contents.
+        """Union[:class:`EmbedProxy`, :attr:`Empty`]: Returns an ``EmbedProxy`` denoting the author contents.
 
         See :meth:`set_author` for possible values you can access.
 
@@ -412,7 +418,7 @@ class Embed:
 
     @property
     def fields(self):
-        """Returns a :class:`list` of ``EmbedProxy`` denoting the field contents.
+        """Union[List[:class:`EmbedProxy`], :attr:`Empty`]: Returns a :class:`list` of ``EmbedProxy`` denoting the field contents.
 
         See :meth:`add_field` for possible values you can access.
 

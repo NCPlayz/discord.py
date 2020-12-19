@@ -24,25 +24,32 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
+import logging
 import asyncio
 import json
 import time
 import re
+from urllib.parse import quote as _uriquote
 
 import aiohttp
 
 from . import utils
-from .errors import InvalidArgument, HTTPException, Forbidden, NotFound
+from .errors import InvalidArgument, HTTPException, Forbidden, NotFound, DiscordServerError
+from .message import Message
 from .enums import try_enum, WebhookType
 from .user import BaseUser, User
 from .asset import Asset
+from .mixins import Hashable
 
 __all__ = (
     'WebhookAdapter',
     'AsyncWebhookAdapter',
     'RequestsWebhookAdapter',
     'Webhook',
+    'WebhookMessage',
 )
+
+log = logging.getLogger(__name__)
 
 class WebhookAdapter:
     """Base class for all webhook adapters.
@@ -60,6 +67,9 @@ class WebhookAdapter:
         self._webhook_token = webhook.token
         self._request_url = '{0.BASE}/webhooks/{1}/{2}'.format(self, webhook.id, webhook.token)
         self.webhook = webhook
+
+    def is_async(self):
+        return False
 
     def request(self, verb, url, payload=None, multipart=None):
         """Actually does the request.
@@ -83,11 +93,17 @@ class WebhookAdapter:
         """
         raise NotImplementedError()
 
-    def delete_webhook(self):
-        return self.request('DELETE', self._request_url)
+    def delete_webhook(self, *, reason=None):
+        return self.request('DELETE', self._request_url, reason=reason)
 
-    def edit_webhook(self, **payload):
-        return self.request('PATCH', self._request_url, payload=payload)
+    def edit_webhook(self, *, reason=None, **payload):
+        return self.request('PATCH', self._request_url, payload=payload, reason=reason)
+
+    def edit_webhook_message(self, message_id, payload):
+        return self.request('PATCH', '{}/messages/{}'.format(self._request_url, message_id), payload=payload)
+
+    def delete_webhook_message(self, message_id):
+        return self.request('DELETE', '{}/messages/{}'.format(self._request_url, message_id))
 
     def handle_execution_response(self, data, *, wait):
         """Transforms the webhook execution response into something
@@ -173,13 +189,19 @@ class AsyncWebhookAdapter(WebhookAdapter):
         self.session = session
         self.loop = asyncio.get_event_loop()
 
-    async def request(self, verb, url, payload=None, multipart=None, *, files=None):
+    def is_async(self):
+        return True
+
+    async def request(self, verb, url, payload=None, multipart=None, *, files=None, reason=None):
         headers = {}
         data = None
         files = files or []
         if payload:
             headers['Content-Type'] = 'application/json'
             data = utils.to_json(payload)
+
+        if reason:
+            headers['X-Audit-Log-Reason'] = _uriquote(reason, safe='/ ')
 
         if multipart:
             data = aiohttp.FormData()
@@ -189,11 +211,14 @@ class AsyncWebhookAdapter(WebhookAdapter):
                 else:
                     data.add_field(key, value)
 
+        base_url = url.replace(self._request_url, '/') or '/'
+        _id = self._webhook_id
         for tries in range(5):
             for file in files:
                 file.reset(seek=tries)
 
             async with self.session.request(verb, url, headers=headers, data=data) as r:
+                log.debug('Webhook ID %s with %s %s has returned status code %s', _id, verb, base_url, r.status)
                 # Coerce empty strings to return None for hygiene purposes
                 response = (await r.text(encoding='utf-8')) or None
                 if r.headers['Content-Type'] == 'application/json':
@@ -203,6 +228,7 @@ class AsyncWebhookAdapter(WebhookAdapter):
                 remaining = r.headers.get('X-Ratelimit-Remaining')
                 if remaining == '0' and r.status != 429:
                     delta = utils._parse_ratelimit_header(r)
+                    log.debug('Webhook ID %s has been pre-emptively rate limited, waiting %.2f seconds', _id, delta)
                     await asyncio.sleep(delta)
 
                 if 300 > r.status >= 200:
@@ -210,7 +236,12 @@ class AsyncWebhookAdapter(WebhookAdapter):
 
                 # we are being rate limited
                 if r.status == 429:
+                    if not r.headers.get('Via'):
+                        # Banned by Cloudflare more than likely.
+                        raise HTTPException(r, data)
+
                     retry_after = response['retry_after'] / 1000.0
+                    log.warning('Webhook ID %s is rate limited. Retrying in %.2f seconds', _id, retry_after)
                     await asyncio.sleep(retry_after)
                     continue
 
@@ -224,7 +255,10 @@ class AsyncWebhookAdapter(WebhookAdapter):
                     raise NotFound(r, response)
                 else:
                     raise HTTPException(r, response)
+
         # no more retries
+        if r.status >= 500:
+            raise DiscordServerError(r, response)
         raise HTTPException(r, response)
 
     async def handle_execution_response(self, response, *, wait):
@@ -233,8 +267,9 @@ class AsyncWebhookAdapter(WebhookAdapter):
             return data
 
         # transform into Message object
-        from .message import Message
-        return Message(data=data, state=self.webhook._state, channel=self.webhook.channel)
+        # Make sure to coerce the state to the partial one to allow message edits/delete
+        state = _PartialWebhookState(self, self.webhook)
+        return WebhookMessage(data=data, state=state, channel=self.webhook.channel)
 
 class RequestsWebhookAdapter(WebhookAdapter):
     """A webhook adapter suited for use with ``requests``.
@@ -259,7 +294,7 @@ class RequestsWebhookAdapter(WebhookAdapter):
         self.session = session or requests
         self.sleep = sleep
 
-    def request(self, verb, url, payload=None, multipart=None, *, files=None):
+    def request(self, verb, url, payload=None, multipart=None, *, files=None, reason=None):
         headers = {}
         data = None
         files = files or []
@@ -267,9 +302,14 @@ class RequestsWebhookAdapter(WebhookAdapter):
             headers['Content-Type'] = 'application/json'
             data = utils.to_json(payload)
 
+        if reason:
+            headers['X-Audit-Log-Reason'] = _uriquote(reason, safe='/ ')
+
         if multipart is not None:
             data = {'payload_json': multipart.pop('payload_json')}
 
+        base_url = url.replace(self._request_url, '/') or '/'
+        _id = self._webhook_id
         for tries in range(5):
             for file in files:
                 file.reset(seek=tries)
@@ -282,6 +322,7 @@ class RequestsWebhookAdapter(WebhookAdapter):
             # compatibility with aiohttp
             r.status = r.status_code
 
+            log.debug('Webhook ID %s with %s %s has returned status code %s', _id, verb, base_url, r.status)
             if r.headers['Content-Type'] == 'application/json':
                 response = json.loads(response)
 
@@ -289,6 +330,7 @@ class RequestsWebhookAdapter(WebhookAdapter):
             remaining = r.headers.get('X-Ratelimit-Remaining')
             if remaining == '0' and r.status != 429 and self.sleep:
                 delta = utils._parse_ratelimit_header(r)
+                log.debug('Webhook ID %s has been pre-emptively rate limited, waiting %.2f seconds', _id, delta)
                 time.sleep(delta)
 
             if 300 > r.status >= 200:
@@ -297,7 +339,12 @@ class RequestsWebhookAdapter(WebhookAdapter):
             # we are being rate limited
             if r.status == 429:
                 if self.sleep:
+                    if not r.headers.get('Via'):
+                        # Banned by Cloudflare more than likely.
+                        raise HTTPException(r, data)
+
                     retry_after = response['retry_after'] / 1000.0
+                    log.warning('Webhook ID %s is rate limited. Retrying in %.2f seconds', _id, retry_after)
                     time.sleep(retry_after)
                     continue
                 else:
@@ -313,7 +360,10 @@ class RequestsWebhookAdapter(WebhookAdapter):
                 raise NotFound(r, response)
             else:
                 raise HTTPException(r, response)
+
         # no more retries
+        if r.status >= 500:
+            raise DiscordServerError(r, response)
         raise HTTPException(r, response)
 
     def handle_execution_response(self, response, *, wait):
@@ -321,8 +371,9 @@ class RequestsWebhookAdapter(WebhookAdapter):
             return response
 
         # transform into Message object
-        from .message import Message
-        return Message(data=response, state=self.webhook._state, channel=self.webhook.channel)
+        # Make sure to coerce the state to the partial one to allow message edits/delete
+        state = _PartialWebhookState(self, self.webhook)
+        return WebhookMessage(data=response, state=state, channel=self.webhook.channel)
 
 class _FriendlyHttpAttributeErrorHelper:
     __slots__ = ()
@@ -331,9 +382,10 @@ class _FriendlyHttpAttributeErrorHelper:
         raise AttributeError('PartialWebhookState does not support http methods.')
 
 class _PartialWebhookState:
-    __slots__ = ('loop',)
+    __slots__ = ('loop', 'parent')
 
-    def __init__(self, adapter):
+    def __init__(self, adapter, parent):
+        self.parent = parent
         # Fetch the loop from the adapter if it's there
         try:
             self.loop = adapter.loop
@@ -359,7 +411,99 @@ class _PartialWebhookState:
     def __getattr__(self, attr):
         raise AttributeError('PartialWebhookState does not support {0!r}.'.format(attr))
 
-class Webhook:
+class WebhookMessage(Message):
+    """Represents a message sent from your webhook.
+
+    This allows you to edit or delete a message sent by your
+    webhook.
+
+    This inherits from :class:`discord.Message` with changes to
+    :meth:`edit` and :meth:`delete` to work.
+
+    .. versionadded:: 1.6
+    """
+
+    def edit(self, **fields):
+        """|maybecoro|
+
+        Edits the message.
+
+        The content must be able to be transformed into a string via ``str(content)``.
+
+        .. versionadded:: 1.6
+
+        Parameters
+        ------------
+        content: Optional[:class:`str`]
+            The content to edit the message with or ``None`` to clear it.
+        embeds: List[:class:`Embed`]
+            A list of embeds to edit the message with.
+        embed: Optional[:class:`Embed`]
+            The embed to edit the message with. ``None`` suppresses the embeds.
+            This should not be mixed with the ``embeds`` parameter.
+        allowed_mentions: :class:`AllowedMentions`
+            Controls the mentions being processed in this message.
+            See :meth:`.abc.Messageable.send` for more information.
+
+        Raises
+        -------
+        HTTPException
+            Editing the message failed.
+        Forbidden
+            Edited a message that is not yours.
+        InvalidArgument
+            You specified both ``embed`` and ``embeds`` or the length of
+            ``embeds`` was invalid or there was no token associated with
+            this webhook.
+        """
+        return self._state.parent.edit_message(self.id, **fields)
+
+    def _delete_delay_sync(self, delay):
+        time.sleep(delay)
+        return self._state.parent.delete_message(self.id)
+
+    async def _delete_delay_async(self, delay):
+        async def inner_call():
+            await asyncio.sleep(delay)
+            try:
+                await self._state.parent.delete_message(self.id)
+            except HTTPException:
+                pass
+
+        asyncio.ensure_future(inner_call(), loop=self._state.loop)
+        return await asyncio.sleep(0)
+
+    def delete(self, *, delay=None):
+        """|coro|
+
+        Deletes the message.
+
+        Parameters
+        -----------
+        delay: Optional[:class:`float`]
+            If provided, the number of seconds to wait before deleting the message.
+            If this is a coroutine, the waiting is done in the background and deletion failures
+            are ignored. If this is not a coroutine then the delay blocks the thread.
+
+        Raises
+        ------
+        Forbidden
+            You do not have proper permissions to delete the message.
+        NotFound
+            The message was deleted already.
+        HTTPException
+            Deleting the message failed.
+        """
+
+        if delay is not None:
+            if self._state.parent._adapter.is_async():
+                return self._delete_delay_async(delay)
+            else:
+                return self._delete_delay_sync(delay)
+
+        return self._state.parent.delete_message(self.id)
+
+class Webhook(Hashable):
     """Represents a Discord webhook.
 
     Webhooks are a form to send messages to channels in Discord without a
@@ -400,6 +544,23 @@ class Webhook:
         webhook = Webhook.partial(123456, 'abcdefg', adapter=RequestsWebhookAdapter())
         webhook.send('Hello World', username='Foo')
 
+    .. container:: operations
+
+        .. describe:: x == y
+
+            Checks if two webhooks are equal.
+
+        .. describe:: x != y
+
+            Checks if two webhooks are not equal.
+
+        .. describe:: hash(x)
+
+            Returns the webhooks's hash.
+
+    .. versionchanged:: 1.4
+        Webhooks are now comparable and hashable.
+
     Attributes
     ------------
     id: :class:`int`
@@ -436,7 +597,7 @@ class Webhook:
         self.name = data.get('name')
         self.avatar = data.get('avatar')
         self.token = data.get('token')
-        self._state = state or _PartialWebhookState(adapter)
+        self._state = state or _PartialWebhookState(adapter, self)
         self._adapter = adapter
         self._adapter._prepare(self)
 
@@ -453,14 +614,12 @@ class Webhook:
 
     @property
     def url(self):
-        """Returns the webhook's url."""
+        """:class:`str` : Returns the webhook's url."""
         return 'https://discord.com/api/webhooks/{}/{}'.format(self.id, self.token)
 
     @classmethod
     def partial(cls, id, token, *, adapter):
         """Creates a partial :class:`Webhook`.
-
-        A partial webhook is just a webhook object with an ID and a token.
 
         Parameters
         -----------
@@ -472,6 +631,12 @@ class Webhook:
             The webhook adapter to use when sending requests. This is
             typically :class:`AsyncWebhookAdapter` for :doc:`aiohttp <aio:index>` or
             :class:`RequestsWebhookAdapter` for :doc:`req:index`.
+
+        Returns
+        --------
+        :class:`Webhook`
+            A partial :class:`Webhook`.
+            A partial webhook is just a webhook object with an ID and a token.
         """
 
         if not isinstance(adapter, WebhookAdapter):
@@ -502,6 +667,12 @@ class Webhook:
         -------
         InvalidArgument
             The URL is invalid.
+
+        Returns
+        --------
+        :class:`Webhook`
+            A partial :class:`Webhook`.
+            A partial webhook is just a webhook object with an ID and a token.
         """
 
         m = re.search(r'discord(?:app)?.com/api/webhooks/(?P<id>[0-9]{17,21})/(?P<token>[A-Za-z0-9\.\-\_]{60,68})', url)
@@ -560,7 +731,7 @@ class Webhook:
 
     @property
     def avatar_url(self):
-        """Returns an :class:`Asset` for the avatar the webhook has.
+        """:class:`Asset`: Returns an :class:`Asset` for the avatar the webhook has.
 
         If the webhook does not have a traditional avatar, an asset for
         the default avatar is returned instead.
@@ -612,13 +783,20 @@ class Webhook:
         url = '/avatars/{0.id}/{0.avatar}.{1}?size={2}'.format(self, format, size)
         return Asset(self._state, url)
 
-    def delete(self):
+    def delete(self, *, reason=None):
         """|maybecoro|
 
         Deletes this Webhook.
 
         If the webhook is constructed with a :class:`RequestsWebhookAdapter` then this is
         not a coroutine.
+
+        Parameters
+        ------------
+        reason: Optional[:class:`str`]
+            The reason for deleting this webhook. Shows up on the audit log.
+
+            .. versionadded:: 1.4
 
         Raises
         -------
@@ -634,9 +812,9 @@ class Webhook:
         if self.token is None:
             raise InvalidArgument('This webhook does not have a token associated with it')
 
-        return self._adapter.delete_webhook()
+        return self._adapter.delete_webhook(reason=reason)
 
-    def edit(self, **kwargs):
+    def edit(self, *, reason=None, **kwargs):
         """|maybecoro|
 
         Edits this Webhook.
@@ -645,11 +823,15 @@ class Webhook:
         not a coroutine.
 
         Parameters
-        -------------
+        ------------
         name: Optional[:class:`str`]
             The webhook's new default name.
         avatar: Optional[:class:`bytes`]
             A :term:`py:bytes-like object` representing the webhook's new default avatar.
+        reason: Optional[:class:`str`]
+            The reason for editing this webhook. Shows up on the audit log.
+
+            .. versionadded:: 1.4
 
         Raises
         -------
@@ -685,7 +867,7 @@ class Webhook:
             else:
                 payload['avatar'] = None
 
-        return self._adapter.edit_webhook(**payload)
+        return self._adapter.edit_webhook(reason=reason, **payload)
 
     def send(self, content=None, *, wait=False, username=None, avatar_url=None, tts=False,
                                     file=None, files=None, embed=None, embeds=None, allowed_mentions=None):
@@ -712,7 +894,7 @@ class Webhook:
         wait: :class:`bool`
             Whether the server should wait before sending a response. This essentially
             means that the return type of this function changes from ``None`` to
-            a :class:`Message` if set to ``True``.
+            a :class:`WebhookMessage` if set to ``True``.
         username: :class:`str`
             The username to send with this message. If no username is provided
             then the default username for the webhook is used.
@@ -752,7 +934,7 @@ class Webhook:
 
         Returns
         ---------
-        Optional[:class:`Message`]
+        Optional[:class:`WebhookMessage`]
             The message that was sent.
         """
 
@@ -796,3 +978,115 @@ class Webhook:
     def execute(self, *args, **kwargs):
         """An alias for :meth:`~.Webhook.send`."""
         return self.send(*args, **kwargs)
+
+    def edit_message(self, message_id, **fields):
+        """|maybecoro|
+
+        Edits a message owned by this webhook.
+
+        This is a lower level interface to :meth:`WebhookMessage.edit` in case
+        you only have an ID.
+
+        .. versionadded:: 1.6
+
+        Parameters
+        ------------
+        message_id: :class:`int`
+            The message ID to edit.
+        content: Optional[:class:`str`]
+            The content to edit the message with or ``None`` to clear it.
+        embeds: List[:class:`Embed`]
+            A list of embeds to edit the message with.
+        embed: Optional[:class:`Embed`]
+            The embed to edit the message with. ``None`` suppresses the embeds.
+            This should not be mixed with the ``embeds`` parameter.
+        allowed_mentions: :class:`AllowedMentions`
+            Controls the mentions being processed in this message.
+            See :meth:`.abc.Messageable.send` for more information.
+
+        Raises
+        -------
+        HTTPException
+            Editing the message failed.
+        Forbidden
+            Edited a message that is not yours.
+        InvalidArgument
+            You specified both ``embed`` and ``embeds`` or the length of
+            ``embeds`` was invalid or there was no token associated with
+            this webhook.
+        """
+
+        payload = {}
+
+        if self.token is None:
+            raise InvalidArgument('This webhook does not have a token associated with it')
+
+        try:
+            content = fields['content']
+        except KeyError:
+            pass
+        else:
+            if content is not None:
+                content = str(content)
+            payload['content'] = content
+
+        # Check if the embeds interface is being used
+        try:
+            embeds = fields['embeds']
+        except KeyError:
+            # Nope
+            pass
+        else:
+            if embeds is None or len(embeds) > 10:
+                raise InvalidArgument('embeds has a maximum of 10 elements')
+            payload['embeds'] = [e.to_dict() for e in embeds]
+
+        try:
+            embed = fields['embed']
+        except KeyError:
+            pass
+        else:
+            if 'embeds' in payload:
+                raise InvalidArgument('Cannot mix embed and embeds keyword arguments')
+
+            if embed is None:
+                payload['embeds'] = []
+            else:
+                payload['embeds'] = [embed.to_dict()]
+
+        allowed_mentions = fields.pop('allowed_mentions', None)
+        previous_mentions = getattr(self._state, 'allowed_mentions', None)
+
+        if allowed_mentions:
+            if previous_mentions is not None:
+                payload['allowed_mentions'] = previous_mentions.merge(allowed_mentions).to_dict()
+            else:
+                payload['allowed_mentions'] = allowed_mentions.to_dict()
+        elif previous_mentions is not None:
+            payload['allowed_mentions'] = previous_mentions.to_dict()
+
+        return self._adapter.edit_webhook_message(message_id, payload=payload)
+
+    def delete_message(self, message_id):
+        """|maybecoro|
+
+        Deletes a message owned by this webhook.
+
+        This is a lower level interface to :meth:`WebhookMessage.delete` in case
+        you only have an ID.
+
+        .. versionadded:: 1.6
+
+        Parameters
+        ------------
+        message_id: :class:`int`
+            The message ID to delete.
+
+        Raises
+        -------
+        HTTPException
+            Deleting the message failed.
+        Forbidden
+            Deleted a message that is not yours.
+        """
+        return self._adapter.delete_webhook_message(message_id)

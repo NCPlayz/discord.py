@@ -34,7 +34,6 @@ from .mixins import Hashable
 from . import utils
 from .asset import Asset
 from .errors import ClientException, NoMoreItems, InvalidArgument
-from .webhook import Webhook
 
 __all__ = (
     'TextChannel',
@@ -82,7 +81,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
     category_id: Optional[:class:`int`]
         The category channel ID this channel belongs to, if applicable.
     topic: Optional[:class:`str`]
-        The channel's topic. None if it doesn't exist.
+        The channel's topic. ``None`` if it doesn't exist.
     position: :class:`int`
         The position in the channel list. This is a number that starts at 0. e.g. the
         top channel is position 0.
@@ -158,11 +157,11 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         return [m for m in self.guild.members if self.permissions_for(m).read_messages]
 
     def is_nsfw(self):
-        """Checks if the channel is NSFW."""
+        """:class:`bool`: Checks if the channel is NSFW."""
         return self.nsfw
 
     def is_news(self):
-        """Checks if the channel is a news channel."""
+        """:class:`bool`: Checks if the channel is a news channel."""
         return self._type == ChannelType.news.value
 
     @property
@@ -197,6 +196,9 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         .. versionchanged:: 1.3
             The ``overwrites`` keyword-only parameter was added.
 
+        .. versionchanged:: 1.4
+            The ``type`` keyword-only parameter was added.
+
         Parameters
         ----------
         name: :class:`str`
@@ -216,6 +218,10 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         slowmode_delay: :class:`int`
             Specifies the slowmode rate limit for user in this channel, in seconds.
             A value of `0` disables slowmode. The maximum value possible is `21600`.
+        type: :class:`ChannelType`
+            Change the type of this text channel. Currently, only conversion between
+            :attr:`ChannelType.text` and :attr:`ChannelType.news` is supported. This
+            is only available to guilds that contain ``NEWS`` in :attr:`Guild.features`.
         reason: Optional[:class:`str`]
             The reason for editing this channel. Shows up on the audit log.
         overwrites: :class:`dict`
@@ -422,6 +428,7 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
             The webhooks for this channel.
         """
 
+        from .webhook import Webhook
         data = await self._state.http.channel_webhooks(self.id)
         return [Webhook.from_state(d, state=self._state) for d in data]
 
@@ -458,13 +465,14 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
             The created webhook.
         """
 
+        from .webhook import Webhook
         if avatar is not None:
             avatar = utils._bytes_to_base64_data(avatar)
 
         data = await self._state.http.create_webhook(self.id, name=str(name), avatar=avatar, reason=reason)
         return Webhook.from_state(data, state=self._state)
 
-    async def follow(self, *, destination):
+    async def follow(self, *, destination, reason=None):
         """
         Follows a channel using a webhook.
 
@@ -481,6 +489,10 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         -----------
         destination: :class:`TextChannel`
             The channel you would like to follow from.
+        reason: Optional[:class:`str`]
+            The reason for following the channel. Shows up on the destination guild's audit log.
+
+            .. versionadded:: 1.4
 
         Raises
         -------
@@ -501,8 +513,31 @@ class TextChannel(discord.abc.Messageable, discord.abc.GuildChannel, Hashable):
         if not isinstance(destination, TextChannel):
             raise InvalidArgument('Expected TextChannel received {0.__name__}'.format(type(destination)))
 
-        data = await self._state.http.follow_webhook(self.id, webhook_channel_id=destination.id)
+        from .webhook import Webhook
+        data = await self._state.http.follow_webhook(self.id, webhook_channel_id=destination.id, reason=reason)
         return Webhook._as_follower(data, channel=destination, user=self._state.user)
+
+    def get_partial_message(self, message_id):
+        """Creates a :class:`PartialMessage` from the message ID.
+
+        This is useful if you want to work with a message and only have its ID without
+        doing an unnecessary API call.
+
+        .. versionadded:: 1.6
+
+        Parameters
+        ------------
+        message_id: :class:`int`
+            The message ID to create a partial message for.
+
+        Returns
+        ---------
+        :class:`PartialMessage`
+            The partial message.
+        """
+
+        from .message import PartialMessage
+        return PartialMessage(channel=self, id=message_id)
 
 class VoiceChannel(discord.abc.Connectable, discord.abc.GuildChannel, Hashable):
     """Represents a Discord guild voice channel.
@@ -746,7 +781,7 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
         return ChannelType.category
 
     def is_nsfw(self):
-        """Checks if the category is NSFW."""
+        """:class:`bool`: Checks if the category is NSFW."""
         return self.nsfw
 
     async def clone(self, *, name=None, reason=None):
@@ -828,6 +863,11 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
         """|coro|
 
         A shortcut method to :meth:`Guild.create_text_channel` to create a :class:`TextChannel` in the category.
+
+        Returns
+        -------
+        :class:`TextChannel`
+            The channel that was just created.
         """
         return await self.guild.create_text_channel(name, overwrites=overwrites, category=self, reason=reason, **options)
 
@@ -835,6 +875,11 @@ class CategoryChannel(discord.abc.GuildChannel, Hashable):
         """|coro|
 
         A shortcut method to :meth:`Guild.create_voice_channel` to create a :class:`VoiceChannel` in the category.
+
+        Returns
+        -------
+        :class:`VoiceChannel`
+            The channel that was just created.
         """
         return await self.guild.create_voice_channel(name, overwrites=overwrites, category=self, reason=reason, **options)
 
@@ -912,7 +957,7 @@ class StoreChannel(discord.abc.GuildChannel, Hashable):
     permissions_for.__doc__ = discord.abc.GuildChannel.permissions_for.__doc__
 
     def is_nsfw(self):
-        """Checks if the channel is NSFW."""
+        """:class:`bool`: Checks if the channel is NSFW."""
         return self.nsfw
 
     async def clone(self, *, name=None, reason=None):
@@ -1019,7 +1064,7 @@ class DMChannel(discord.abc.Messageable, Hashable):
 
     @property
     def created_at(self):
-        """Returns the direct message channel's creation time in UTC."""
+        """:class:`datetime.datetime`: Returns the direct message channel's creation time in UTC."""
         return utils.snowflake_time(self.id)
 
     def permissions_for(self, user=None):
@@ -1050,6 +1095,28 @@ class DMChannel(discord.abc.Messageable, Hashable):
         base.send_tts_messages = False
         base.manage_messages = False
         return base
+
+    def get_partial_message(self, message_id):
+        """Creates a :class:`PartialMessage` from the message ID.
+
+        This is useful if you want to work with a message and only have its ID without
+        doing an unnecessary API call.
+
+        .. versionadded:: 1.6
+
+        Parameters
+        ------------
+        message_id: :class:`int`
+            The message ID to create a partial message for.
+
+        Returns
+        ---------
+        :class:`PartialMessage`
+            The partial message.
+        """
+
+        from .message import PartialMessage
+        return PartialMessage(channel=self, id=message_id)
 
 class GroupChannel(discord.abc.Messageable, Hashable):
     """Represents a Discord group channel.
@@ -1133,8 +1200,39 @@ class GroupChannel(discord.abc.Messageable, Hashable):
 
     @property
     def icon_url(self):
-        """:class:`Asset`: Returns the channel's icon asset if available."""
-        return Asset._from_icon(self._state, self, 'channel')
+        """:class:`Asset`: Returns the channel's icon asset if available.
+
+        This is equivalent to calling :meth:`icon_url_as` with
+        the default parameters ('webp' format and a size of 1024).
+        """
+        return self.icon_url_as()
+
+    def icon_url_as(self, *, format='webp', size=1024):
+        """Returns an :class:`Asset` for the icon the channel has.
+
+        The format must be one of 'webp', 'jpeg', 'jpg' or 'png'.
+        The size must be a power of 2 between 16 and 4096.
+
+        .. versionadded:: 2.0
+
+        Parameters
+        -----------
+        format: :class:`str`
+            The format to attempt to convert the icon to. Defaults to 'webp'.
+        size: :class:`int`
+            The size of the image to display.
+
+        Raises
+        ------
+        InvalidArgument
+            Bad image format passed to ``format`` or invalid ``size``.
+
+        Returns
+        --------
+        :class:`Asset`
+            The resulting CDN asset.
+        """
+        return Asset._from_icon(self._state, self, 'channel', format=format, size=size)
 
     @property
     def created_at(self):

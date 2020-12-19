@@ -70,9 +70,14 @@ class CogMeta(type):
     -----------
     name: :class:`str`
         The cog name. By default, it is the name of the class with no modification.
+    description: :class:`str`
+        The cog description. By default, it is the cleaned docstring of the class.
+
+        .. versionadded:: 1.6
+
     command_attrs: :class:`dict`
         A list of attributes to apply to every command inside this cog. The dictionary
-        is passed into the :class:`Command` (or its subclass) options at ``__init__``.
+        is passed into the :class:`Command` options at ``__init__``.
         If you specify attributes inside the command attribute in the class, it will
         override the one specified inside this attribute. For example:
 
@@ -92,6 +97,11 @@ class CogMeta(type):
         name, bases, attrs = args
         attrs['__cog_name__'] = kwargs.pop('name', name)
         attrs['__cog_settings__'] = command_attrs = kwargs.pop('command_attrs', {})
+
+        description = kwargs.pop('description', None)
+        if description is None:
+            description = inspect.cleandoc(attrs.get('__doc__', ''))
+        attrs['__cog_description__'] = description
 
         commands = {}
         listeners = {}
@@ -188,12 +198,16 @@ class Cog(metaclass=CogMeta):
         return self
 
     def get_commands(self):
-        r"""Returns a :class:`list` of :class:`.Command`\s that are
-        defined inside this cog.
+        r"""
+        Returns
+        --------
+        List[:class:`.Command`]
+            A :class:`list` of :class:`.Command`\s that are
+            defined inside this cog.
 
-        .. note::
+            .. note::
 
-            This does not include subcommands.
+                This does not include subcommands.
         """
         return [c for c in self.__cog_commands__ if c.parent is None]
 
@@ -205,14 +219,20 @@ class Cog(metaclass=CogMeta):
     @property
     def description(self):
         """:class:`str`: Returns the cog's description, typically the cleaned docstring."""
-        try:
-            return self.__cog_cleaned_doc__
-        except AttributeError:
-            self.__cog_cleaned_doc__ = cleaned = inspect.getdoc(self)
-            return cleaned
+        return self.__cog_description__
+
+    @description.setter
+    def description(self, description):
+        self.__cog_description__ = description
 
     def walk_commands(self):
-        """An iterator that recursively walks through this cog's commands and subcommands."""
+        """An iterator that recursively walks through this cog's commands and subcommands.
+
+        Yields
+        ------
+        Union[:class:`.Command`, :class:`.Group`]
+            A command or group from the cog.
+        """
         from .core import GroupMixin
         for command in self.__cog_commands__:
             if command.parent is None:
@@ -221,7 +241,13 @@ class Cog(metaclass=CogMeta):
                     yield from command.walk_commands()
 
     def get_listeners(self):
-        """Returns a :class:`list` of (name, function) listener pairs that are defined in this cog."""
+        """Returns a :class:`list` of (name, function) listener pairs that are defined in this cog.
+
+        Returns
+        --------
+        List[Tuple[:class:`str`, :ref:`coroutine <coroutine>`]]
+            The listeners defined in this cog.
+        """
         return [(name, getattr(self, method_name)) for name, method_name in self.__cog_listeners__]
 
     @classmethod
@@ -375,7 +401,7 @@ class Cog(metaclass=CogMeta):
                 except Exception as e:
                     # undo our additions
                     for to_undo in self.__cog_commands__[:index]:
-                        bot.remove_command(to_undo)
+                        bot.remove_command(to_undo.name)
                     raise e
 
         # check if we're overriding the default
@@ -411,4 +437,7 @@ class Cog(metaclass=CogMeta):
             if cls.bot_check_once is not Cog.bot_check_once:
                 bot.remove_check(self.bot_check_once, call_once=True)
         finally:
-            self.cog_unload()
+            try:
+                self.cog_unload()
+            except Exception:
+                pass

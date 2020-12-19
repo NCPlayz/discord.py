@@ -24,7 +24,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-from discord.errors import DiscordException
+from discord.errors import ClientException, DiscordException
 
 
 __all__ = (
@@ -43,6 +43,17 @@ __all__ = (
     'CommandOnCooldown',
     'MaxConcurrencyReached',
     'NotOwner',
+    'MessageNotFound',
+    'MemberNotFound',
+    'UserNotFound',
+    'ChannelNotFound',
+    'ChannelNotReadable',
+    'BadColourArgument',
+    'RoleNotFound',
+    'BadInviteArgument',
+    'EmojiNotFound',
+    'PartialEmojiConversionFailure',
+    'BadBoolArgument',
     'MissingRole',
     'BotMissingRole',
     'MissingAnyRole',
@@ -62,6 +73,7 @@ __all__ = (
     'NoEntryPointError',
     'ExtensionFailed',
     'ExtensionNotFound',
+    'CommandRegistrationError',
 )
 
 class CommandError(DiscordException):
@@ -90,7 +102,7 @@ class ConversionError(CommandError):
     ----------
     converter: :class:`discord.ext.commands.Converter`
         The converter that failed.
-    original
+    original: :exc:`Exception`
         The original exception that was raised. You can also get this via
         the ``__cause__`` attribute.
     """
@@ -201,6 +213,182 @@ class NotOwner(CheckFailure):
     """
     pass
 
+class MemberNotFound(BadArgument):
+    """Exception raised when the member provided was not found in the bot's
+    cache.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The member supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Member "{}" not found.'.format(argument))
+
+class UserNotFound(BadArgument):
+    """Exception raised when the user provided was not found in the bot's
+    cache.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The user supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('User "{}" not found.'.format(argument))
+
+class MessageNotFound(BadArgument):
+    """Exception raised when the message provided was not found in the channel.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The message supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Message "{}" not found.'.format(argument))
+
+class ChannelNotReadable(BadArgument):
+    """Exception raised when the bot does not have permission to read messages
+    in the channel.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`.abc.GuildChannel`
+        The channel supplied by the caller that was not readable
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__("Can't read messages in {}.".format(argument.mention))
+
+class ChannelNotFound(BadArgument):
+    """Exception raised when the bot can not find the channel.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    channel: :class:`str`
+        The channel supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Channel "{}" not found.'.format(argument))
+
+class BadColourArgument(BadArgument):
+    """Exception raised when the colour is not valid.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The colour supplied by the caller that was not valid
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Colour "{}" is invalid.'.format(argument))
+
+BadColorArgument = BadColourArgument
+
+class RoleNotFound(BadArgument):
+    """Exception raised when the bot can not find the role.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The role supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Role "{}" not found.'.format(argument))
+
+class BadInviteArgument(BadArgument):
+    """Exception raised when the invite is invalid or expired.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+    """
+    def __init__(self):
+        super().__init__('Invite is invalid or expired.')
+
+class EmojiNotFound(BadArgument):
+    """Exception raised when the bot can not find the emoji.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The emoji supplied by the caller that was not found
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Emoji "{}" not found.'.format(argument))
+
+class PartialEmojiConversionFailure(BadArgument):
+    """Exception raised when the emoji provided does not match the correct
+    format.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The emoji supplied by the caller that did not match the regex
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('Couldn\'t convert "{}" to PartialEmoji.'.format(argument))
+
+class BadBoolArgument(BadArgument):
+    """Exception raised when a boolean argument was not convertable.
+
+    This inherits from :exc:`BadArgument`
+
+    .. versionadded:: 1.5
+
+    Attributes
+    -----------
+    argument: :class:`str`
+        The boolean argument supplied by the caller that is not in the predefined list
+    """
+    def __init__(self, argument):
+        self.argument = argument
+        super().__init__('{} is not a recognised boolean option'.format(argument))
+
 class DisabledCommand(CommandError):
     """Exception raised when the command being invoked is disabled.
 
@@ -215,7 +403,7 @@ class CommandInvokeError(CommandError):
 
     Attributes
     -----------
-    original
+    original: :exc:`Exception`
         The original exception that was raised. You can also get this via
         the ``__cause__`` attribute.
     """
@@ -250,7 +438,7 @@ class MaxConcurrencyReached(CommandError):
     ------------
     number: :class:`int`
         The maximum number of concurrent invokers allowed.
-    per: :class:`BucketType`
+    per: :class:`.BucketType`
         The bucket type passed to the :func:`.max_concurrency` decorator.
     """
 
@@ -583,3 +771,24 @@ class ExtensionNotFound(ExtensionError):
         self.original = None
         fmt = 'Extension {0!r} could not be loaded.'
         super().__init__(fmt.format(name), name=name)
+
+class CommandRegistrationError(ClientException):
+    """An exception raised when the command can't be added
+    because the name is already taken by a different command.
+
+    This inherits from :exc:`discord.ClientException`
+
+    .. versionadded:: 1.4
+
+    Attributes
+    ----------
+    name: :class:`str`
+        The command name that had the error.
+    alias_conflict: :class:`bool`
+        Whether the name that conflicts is an alias of the command we try to add.
+    """
+    def __init__(self, name, *, alias_conflict=False):
+        self.name = name
+        self.alias_conflict = alias_conflict
+        type_ = 'alias' if alias_conflict else 'command'
+        super().__init__('The {} {} is already an existing command or alias.'.format(type_, name))
