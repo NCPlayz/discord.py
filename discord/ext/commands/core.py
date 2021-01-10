@@ -781,14 +781,19 @@ class Command(_BaseCommand):
         if self._max_concurrency is not None:
             await self._max_concurrency.acquire(ctx)
 
-        if self.cooldown_after_parsing:
-            await self._parse_arguments(ctx)
-            self._prepare_cooldowns(ctx)
-        else:
-            self._prepare_cooldowns(ctx)
-            await self._parse_arguments(ctx)
+        try:
+            if self.cooldown_after_parsing:
+                await self._parse_arguments(ctx)
+                self._prepare_cooldowns(ctx)
+            else:
+                self._prepare_cooldowns(ctx)
+                await self._parse_arguments(ctx)
 
-        await self.call_before_hooks(ctx)
+            await self.call_before_hooks(ctx)
+        except:
+            if self._max_concurrency is not None:
+                await self._max_concurrency.release(ctx)
+            raise
 
     def is_on_cooldown(self, ctx):
         """Checks whether the command is currently on cooldown.
@@ -1140,6 +1145,7 @@ class GroupMixin:
         self.all_commands[command.name] = command
         for alias in command.aliases:
             if alias in self.all_commands:
+                self.remove_command(command.name)
                 raise CommandRegistrationError(alias, alias_conflict=True)
             self.all_commands[alias] = command
 
@@ -1172,7 +1178,12 @@ class GroupMixin:
 
         # we're not removing the alias so let's delete the rest of them.
         for alias in command.aliases:
-            self.all_commands.pop(alias, None)
+            cmd = self.all_commands.pop(alias, None)
+            # in the case of a CommandRegistrationError, an alias might conflict
+            # with an already existing command. If this is the case, we want to
+            # make sure the pre-existing command is not removed.
+            if cmd not in (None, command):
+                self.all_commands[alias] = cmd
         return command
 
     def walk_commands(self):

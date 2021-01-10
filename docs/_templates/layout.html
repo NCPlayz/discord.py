@@ -67,7 +67,7 @@
         <a onclick="mobileSearch.close();" title="{{ _('Close') }}" id="close-search" class="mobile-only" hidden><span class="material-icons">close</span></a>
       </nav>
       <nav class="mobile-only">
-        <form role="search" class="search" action="search.html" method="get">
+        <form role="search" class="search" action="{{ pathto('search') }}" method="get">
           <div class="search-wrapper">
             <input type="search" name="q" placeholder="{{ _('Search documentation') }}" />
             <button type="submit">
@@ -90,7 +90,7 @@
         <option value="{{ pathto(p + '/index')|e }}" {% if pagename is prefixedwith p %}selected{% endif %}>{{ ext }}</option>
         {%- endfor %}
       </select>
-      <form role="search" class="search" action="search.html" method="get">
+      <form role="search" class="search" action="{{ pathto('search') }}" method="get">
         <div class="search-wrapper">
           <input type="search" name="q" placeholder="{{ _('Search documentation') }}" />
           <button type="submit">
@@ -115,7 +115,7 @@
       </div>
     </aside>
     {#- The actual body of the contents #}
-    <main class="grid-item">
+    <main class="grid-item" role="main">
       {% block body %} {% endblock %}
     </main>
 {%- block footer %}

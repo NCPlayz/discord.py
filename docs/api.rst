@@ -155,7 +155,7 @@ Opus Library
 Event Reference
 ---------------
 
-This page outlines the different types of events listened by :class:`Client`.
+This section outlines the different types of events listened by :class:`Client`.
 
 There are two ways to register an event, the first way is through the use of
 :meth:`Client.event`. The second way is through subclassing :class:`Client` and
@@ -669,6 +669,7 @@ to handle it, which defaults to print a traceback and ignoring the exception.
     - activity
     - nickname
     - roles
+    - pending
 
     This requires :attr:`Intents.members` to be enabled.
 
